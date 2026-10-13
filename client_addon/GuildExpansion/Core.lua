@@ -1,0 +1,466 @@
+--[[
+  Guild Expansion: server sync.
+  The server whispers LANG_ADDON lines to the player: "GSPE\t<command>\t<fields>".
+    STATE\tlevel\txp\tprev\tnext\ttoday\tweek\tdailyCap\tweeklyCap\tsupplies\tguildId\tname
+    CLEAR | ERROR\ttext
+    WOB\tcount\tstatus, WO\t..., WOE    work order list (status 0 ok, 1 no guild, 2 disabled)
+    PLACED\torderId\ttotal | DONE\torderId\tgold\tguildXp\tsupplies
+  Requests are whispered to ourselves ("GSPE", "<command> <args>"); the server swallows them.
+]]
+
+local ADDON_NAME = "GuildExpansion"
+local PREFIX = "GSPE"
+local PULL_THROTTLE = 2
+
+GuildExpansion = GuildExpansion or {}
+local GE = GuildExpansion
+
+GE.MAX_LEVEL = 25
+GE.state = nil          -- guild progress, nil when not in a guild
+GE.orders = {}          -- work orders, in server order
+GE.ordersStatus = 0     -- 0 ok, 1 no guild, 2 disabled
+GE.unitTemplates = {}   -- id -> { kind, role, class, icon, name }
+GE.units = {}           -- the guild's units
+GE.candidates = {}      -- recruit candidates
+GE.unitInfo = { count = 0, max = 0, cap = 0, expiresAt = 0, status = 0 }
+GE.missionTemplates = {} -- id -> { type, slots, roles = {...}, name, desc }
+GE.offers = {}          -- missions on the board
+GE.running = {}         -- missions in progress
+GE.missionInfo = { slots = 0, status = 0 }
+GE.chance = nil         -- last success preview: { id, value, countered = set, missing = set }
+GE.lastResult = nil     -- last collected mission result
+
+local DEFAULT_OPTIONS = {
+    xpText = true,
+    levelAlert = true,
+    scale = 1,
+}
+
+local listeners = {}
+local pendingOrders
+local pendingUnits
+local pendingMissions
+local hadSnapshotThisSession = false
+local lastPull = 0
+
+function GE.Print(msg)
+    DEFAULT_CHAT_FRAME:AddMessage("|cff00ccffGuild Expansion:|r " .. msg)
+end
+
+function GE.FormatNumber(n)
+    local formatted, k = tostring(math.floor(n or 0)), 0
+    repeat
+        formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", "%1,%2")
+    until k == 0
+    return formatted
+end
+
+local COIN_ICON = "|TInterface\\MoneyFrame\\UI-%sIcon:%d:%d:2:0|t"
+
+-- Gold/silver/copper with fixed-size coin icons (GetCoinTextureString sizes them to the
+-- font, which sits unevenly with replaced fonts such as ElvUI's).
+function GE.FormatMoney(copper, iconSize)
+    copper = math.floor(copper or 0)
+    iconSize = iconSize or 12
+    local gold, silver, cop = math.floor(copper / 10000), math.floor(copper / 100) % 100, copper % 100
+    local parts = {}
+    if gold > 0 then
+        parts[#parts + 1] = gold .. COIN_ICON:format("Gold", iconSize, iconSize)
+    end
+    if silver > 0 or gold > 0 then
+        parts[#parts + 1] = silver .. COIN_ICON:format("Silver", iconSize, iconSize)
+    end
+    parts[#parts + 1] = cop .. COIN_ICON:format("Copper", iconSize, iconSize)
+    return table.concat(parts, " ")
+end
+
+-- fn(event): event is "state" or "orders".
+function GE.RegisterListener(fn)
+    listeners[#listeners + 1] = fn
+end
+
+local function Fire(event)
+    for i = 1, #listeners do
+        listeners[i](event)
+    end
+end
+
+function GE.Options()
+    return GuildExpansionSaved.options
+end
+
+function GE.SetOption(key, value)
+    GuildExpansionSaved.options[key] = value
+    Fire("state")
+end
+
+function GE.SetScale(value)
+    value = math.max(0.6, math.min(1.4, tonumber(value) or 1))
+    GuildExpansionSaved.options.scale = math.floor(value * 100 + 0.5) / 100
+    GE.UI.ApplyScale()
+end
+
+function GE.Send(msg)
+    SendAddonMessage(PREFIX, msg, "WHISPER", UnitName("player"))
+end
+
+function GE.RequestSync(force)
+    local now = GetTime()
+    if not force and now - lastPull < PULL_THROTTLE then
+        return
+    end
+    lastPull = now
+    GE.Send("PULL")
+end
+
+function GE.FindOrder(id)
+    for _, order in ipairs(GE.orders) do
+        if order.id == id then
+            return order
+        end
+    end
+    return nil
+end
+
+local function ParseState(fields)
+    local name = fields[13] or ""
+    for i = 14, #fields do
+        name = name .. " " .. fields[i]
+    end
+    return {
+        level = tonumber(fields[3]) or 1,
+        xp = tonumber(fields[4]) or 0,
+        prev = tonumber(fields[5]) or 0,
+        nextXp = tonumber(fields[6]) or 0,
+        today = tonumber(fields[7]) or 0,
+        week = tonumber(fields[8]) or 0,
+        dailyCap = tonumber(fields[9]) or 0,
+        weeklyCap = tonumber(fields[10]) or 0,
+        supplies = tonumber(fields[11]) or 0,
+        guildId = tonumber(fields[12]) or 0,
+        guildName = name,
+    }
+end
+
+local function OnState(data)
+    local prev = GuildExpansionCharSaved.last
+    local sameGuild = prev and prev.guildId == data.guildId
+
+    if sameGuild and data.level > prev.level then
+        GE.Notify.LevelUp(prev.level, data.level, data.guildName, not hadSnapshotThisSession)
+    elseif sameGuild and hadSnapshotThisSession and data.xp > prev.xp then
+        GE.Notify.XpGain(data.xp - prev.xp)
+    end
+
+    hadSnapshotThisSession = true
+    GuildExpansionCharSaved.last = data
+    GE.state = data
+    Fire("state")
+end
+
+local function ParseOrder(f)
+    return {
+        id = tonumber(f[3]) or 0,
+        kind = tonumber(f[4]) or 0,
+        skill = tonumber(f[5]) or 0,
+        spell = tonumber(f[6]) or 0,
+        item = tonumber(f[7]) or 0,
+        quality = tonumber(f[8]) or 1,
+        quantity = tonumber(f[9]) or 1,
+        placed = tonumber(f[10]) or 0,
+        gold = tonumber(f[11]) or 0,
+        supplies = tonumber(f[12]) or 0,
+        guildXp = tonumber(f[13]) or 0,
+        expiresAt = GetTime() + (tonumber(f[14]) or 0),
+        name = f[15] or "",
+    }
+end
+
+local function ParseUnit(f)
+    return {
+        id = tonumber(f[3]) or 0,
+        template = tonumber(f[4]) or 0,
+        race = tonumber(f[5]) or 0,
+        gender = tonumber(f[6]) or 0,
+        quality = tonumber(f[7]) or 2,
+        level = tonumber(f[8]) or 1,
+        xp = tonumber(f[9]) or 0,
+        xpNext = tonumber(f[10]) or 1,
+        itemLevel = tonumber(f[11]) or 0,
+        abilities = { tonumber(f[12]) or 0, tonumber(f[13]) or 0 },
+        traits = { tonumber(f[14]) or 0, tonumber(f[15]) or 0 },
+        status = tonumber(f[16]) or 0,
+        cost = tonumber(f[17]) or 0,
+        name = f[18] or "",
+    }
+end
+
+local function NumberList(csv)
+    local out = {}
+    for v in string.gmatch(csv or "", "%d+") do
+        out[#out + 1] = tonumber(v)
+    end
+    return out
+end
+
+local function NumberSet(csv)
+    local out = {}
+    for _, v in ipairs(NumberList(csv)) do
+        out[v] = true
+    end
+    return out
+end
+
+local function ParseMission(f)
+    local now = GetTime()
+    return {
+        id = tonumber(f[3]) or 0,
+        state = tonumber(f[4]) or 0,
+        template = tonumber(f[5]) or 0,
+        level = tonumber(f[6]) or 1,
+        itemLevel = tonumber(f[7]) or 0,
+        threats = NumberList(f[8]),
+        duration = tonumber(f[9]) or 0,
+        cost = tonumber(f[10]) or 0,
+        gold = tonumber(f[11]) or 0,
+        supplies = tonumber(f[12]) or 0,
+        guildXp = tonumber(f[13]) or 0,
+        unitXp = tonumber(f[14]) or 0,
+        item = tonumber(f[15]) or 0,
+        itemCount = tonumber(f[16]) or 0,
+        gear = tonumber(f[17]) or 0,
+        chance = tonumber(f[18]) or 0,
+        units = NumberList(f[19]),
+        endsAt = now + (tonumber(f[20]) or 0),
+        expiresAt = now + (tonumber(f[21]) or 0),
+    }
+end
+
+-- Asks for the mission board; mission templates are fetched once per session.
+function GE.RequestMissions()
+    if not next(GE.missionTemplates) then
+        GE.Send("MTPL")
+    end
+    GE.Send("MISSIONS")
+end
+
+-- Asks for unit data; unit templates are fetched once per session.
+function GE.RequestUnits()
+    if not next(GE.unitTemplates) then
+        GE.Send("UTPL")
+    end
+    GE.Send("UNITS")
+end
+
+local function OnLine(line)
+    local fields = { strsplit("\t", line) }
+    if fields[1] ~= PREFIX then
+        return
+    end
+
+    local cmd = fields[2]
+    if cmd == "STATE" then
+        OnState(ParseState(fields))
+    elseif cmd == "CLEAR" then
+        GuildExpansionCharSaved.last = nil
+        GE.state = nil
+        Fire("state")
+    elseif cmd == "ERROR" then
+        UIErrorsFrame:AddMessage(fields[3] or "", 1.0, 0.1, 0.1, 1.0)
+    elseif cmd == "WOB" then
+        pendingOrders = {}
+        GE.ordersStatus = tonumber(fields[4]) or 0
+    elseif cmd == "WO" then
+        if pendingOrders then
+            pendingOrders[#pendingOrders + 1] = ParseOrder(fields)
+        end
+    elseif cmd == "WOE" then
+        GE.orders = pendingOrders or {}
+        pendingOrders = nil
+        Fire("orders")
+    elseif cmd == "PLACED" then
+        local order = GE.FindOrder(tonumber(fields[3]))
+        if order then
+            order.placed = tonumber(fields[4]) or 0
+            Fire("orders")
+        end
+    elseif cmd == "DONE" then
+        PlaySoundFile("Sound\\Interface\\iQuestComplete.wav")
+    elseif cmd == "UT" then
+        GE.unitTemplates[tonumber(fields[3]) or 0] = {
+            kind = tonumber(fields[4]) or 0,
+            role = tonumber(fields[5]) or 2,
+            class = tonumber(fields[6]) or 0,
+            icon = fields[7] or "INV_Misc_QuestionMark",
+            name = fields[8] or "",
+        }
+    elseif cmd == "UTE" then
+        Fire("units")
+    elseif cmd == "UB" then
+        pendingUnits = {}
+        GE.unitInfo = {
+            count = tonumber(fields[3]) or 0,
+            max = tonumber(fields[4]) or 0,
+            cap = tonumber(fields[5]) or 0,
+            expiresAt = GetTime() + (tonumber(fields[7]) or 0),
+            status = tonumber(fields[8]) or 0,
+        }
+    elseif cmd == "U" then
+        if pendingUnits then
+            pendingUnits[#pendingUnits + 1] = ParseUnit(fields)
+        end
+    elseif cmd == "UE" then
+        GE.units, GE.candidates = {}, {}
+        for _, unit in ipairs(pendingUnits or {}) do
+            if unit.status == 2 then
+                GE.candidates[#GE.candidates + 1] = unit
+            else
+                GE.units[#GE.units + 1] = unit
+            end
+        end
+        pendingUnits = nil
+        Fire("units")
+    elseif cmd == "RECRUITED" then
+        PlaySoundFile("Sound\\Interface\\iQuestComplete.wav")
+    elseif cmd == "MT" then
+        local id = tonumber(fields[3]) or 0
+        local tmpl = GE.missionTemplates[id] or {}
+        tmpl.type = tonumber(fields[4]) or 0
+        tmpl.slots = tonumber(fields[5]) or 1
+        tmpl.roles = NumberList(fields[6])
+        tmpl.name = fields[7] or ""
+        GE.missionTemplates[id] = tmpl
+    elseif cmd == "MD" then
+        local id = tonumber(fields[3]) or 0
+        GE.missionTemplates[id] = GE.missionTemplates[id] or {}
+        GE.missionTemplates[id].desc = fields[4] or ""
+    elseif cmd == "MTE" then
+        Fire("missions")
+    elseif cmd == "MB" then
+        pendingMissions = {}
+        GE.missionInfo = {
+            slots = tonumber(fields[5]) or 0,
+            status = tonumber(fields[6]) or 0,
+        }
+    elseif cmd == "M" then
+        if pendingMissions then
+            pendingMissions[#pendingMissions + 1] = ParseMission(fields)
+        end
+    elseif cmd == "ME" then
+        GE.offers, GE.running = {}, {}
+        for _, m in ipairs(pendingMissions or {}) do
+            if m.state == 1 then
+                GE.running[#GE.running + 1] = m
+            else
+                GE.offers[#GE.offers + 1] = m
+            end
+        end
+        pendingMissions = nil
+        Fire("missions")
+    elseif cmd == "MCHANCE" then
+        GE.chance = {
+            id = tonumber(fields[3]) or 0,
+            value = tonumber(fields[4]) or 0,
+            countered = NumberSet(fields[5]),
+            missing = NumberSet(fields[6]),
+        }
+        Fire("chance")
+    elseif cmd == "MSTARTED" then
+        PlaySound("igQuestListOpen")
+    elseif cmd == "MRESULT" then
+        GE.lastResult = {
+            id = tonumber(fields[3]) or 0,
+            template = tonumber(fields[4]) or 0,
+            success = fields[5] == "1",
+            bonus = fields[6] == "1",
+            gold = tonumber(fields[7]) or 0,
+            supplies = tonumber(fields[8]) or 0,
+            guildXp = tonumber(fields[9]) or 0,
+            unitXp = tonumber(fields[10]) or 0,
+            item = tonumber(fields[11]) or 0,
+            itemCount = tonumber(fields[12]) or 0,
+            gear = tonumber(fields[13]) or 0,
+            levelUps = tonumber(fields[14]) or 0,
+        }
+        PlaySoundFile(GE.lastResult.success and "Sound\\Interface\\iQuestComplete.wav" or "Sound\\Interface\\iQuestFailed.wav")
+        Fire("result")
+    elseif cmd == "MDONE" then
+        local tmpl = GE.missionTemplates[tonumber(fields[4]) or 0]
+        GE.Notify.MissionDone(tmpl and tmpl.name or "A mission")
+        Fire("missions")
+    end
+end
+
+local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("PLAYER_GUILD_UPDATE")
+eventFrame:RegisterEvent("CHAT_MSG_ADDON")
+
+eventFrame:SetScript("OnEvent", function(self, event, ...)
+    if event == "ADDON_LOADED" then
+        if ... ~= ADDON_NAME then
+            return
+        end
+        GuildExpansionSaved = GuildExpansionSaved or {}
+        GuildExpansionSaved.options = GuildExpansionSaved.options or {}
+        for key, value in pairs(DEFAULT_OPTIONS) do
+            if GuildExpansionSaved.options[key] == nil then
+                GuildExpansionSaved.options[key] = value
+            end
+        end
+        GuildExpansionCharSaved = GuildExpansionCharSaved or {}
+        GE.state = GuildExpansionCharSaved.last
+    elseif event == "PLAYER_LOGIN" then
+        Fire("state")
+        GE.RequestSync(true)
+    elseif event == "PLAYER_GUILD_UPDATE" then
+        GE.RequestSync()
+    elseif event == "CHAT_MSG_ADDON" then
+        local prefix, body, channel, sender = ...
+        if prefix == PREFIX and channel == "WHISPER" and sender == UnitName("player") then
+            OnLine(PREFIX .. "\t" .. tostring(body or ""))
+        end
+    end
+end)
+
+local function PrintHelp()
+    GE.Print("commands:")
+    DEFAULT_CHAT_FRAME:AddMessage("  /gl - open or close the Guild Expansion window")
+    DEFAULT_CHAT_FRAME:AddMessage("  /gl missions - open the Missions tab")
+    DEFAULT_CHAT_FRAME:AddMessage("  /gl units - open the Units tab")
+    DEFAULT_CHAT_FRAME:AddMessage("  /gl orders - open the Work Orders tab")
+    DEFAULT_CHAT_FRAME:AddMessage("  /gl guild - open the Guild tab (level and perks)")
+    DEFAULT_CHAT_FRAME:AddMessage("  /gl scale 0.9 - change the window size (0.6 to 1.4)")
+    DEFAULT_CHAT_FRAME:AddMessage("  /gl bank - use Mobile Banking")
+    DEFAULT_CHAT_FRAME:AddMessage("  /gl refresh - ask the server for fresh data")
+end
+
+SLASH_GUILDEXPANSION1 = "/gl"
+SLASH_GUILDEXPANSION2 = "/guildexpansion"
+SlashCmdList["GUILDEXPANSION"] = function(input)
+    local cmd = strlower(strtrim(input or ""))
+    if cmd == "" then
+        GE.UI.Toggle()
+    elseif cmd == "orders" or cmd == "wo" then
+        GE.UI.Show("orders")
+    elseif cmd == "units" then
+        GE.UI.Show("units")
+    elseif cmd == "missions" or cmd == "m" then
+        GE.UI.Show("missions")
+    elseif cmd == "guild" or cmd == "perks" then
+        GE.UI.Show("guild")
+    elseif cmd:match("^scale") then
+        local value = tonumber(cmd:match("^scale%s+([%d%.]+)"))
+        if value then
+            GE.SetScale(value)
+        end
+        GE.Print("window size is " .. GE.Options().scale .. " (use /gl scale 0.6 to 1.4).")
+    elseif cmd == "bank" then
+        GE.Send("USE BANK")
+    elseif cmd == "refresh" or cmd == "pull" then
+        GE.RequestSync(true)
+    else
+        PrintHelp()
+    end
+end

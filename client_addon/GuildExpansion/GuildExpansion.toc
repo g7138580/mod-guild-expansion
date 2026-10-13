@@ -1,0 +1,17 @@
+## Interface: 30300
+## Title: Guild Expansion
+## Notes: Companion to the AzerothCore module mod-guild-expansion: guild level, perks and work orders.
+## Author: mod-guild-expansion
+## Version: 1
+## SavedVariables: GuildExpansionSaved
+## SavedVariablesPerCharacter: GuildExpansionCharSaved
+
+Core.lua
+Defs.lua
+Perks.lua
+Notify.lua
+UI.lua
+Missions.lua
+Units.lua
+WorkOrders.lua
+Overview.lua

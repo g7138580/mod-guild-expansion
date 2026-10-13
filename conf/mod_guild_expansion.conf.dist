@@ -1,0 +1,126 @@
+#
+# mod-guild-expansion: guild levels, perks and work orders for solo play.
+# Copy to mod_guild_expansion.conf in the server's configs/modules folder.
+#
+
+[worldserver]
+
+########################################
+# General
+########################################
+
+GuildExpansion.Enable = 1
+
+# Send guild progress and work orders to the GuildExpansion client add-on.
+GuildExpansion.AddonSync = 1
+
+# Ignore guild XP earned by characters without a game client (playerbots and other
+# headless sessions). Keeps bot guilds from leveling and saves database writes.
+GuildExpansion.IgnoreHeadlessPlayers = 1
+
+########################################
+# Guild XP
+########################################
+
+# Scales the XP needed for every guild level. 1.0 = the original mod-guild-levels
+# curve (19.6M XP for level 25); 0.35 = about 6.9M.
+GuildExpansion.LevelCurveMultiplier = 0.35
+
+# Share of a character's kill / quest XP that is also given to the guild.
+GuildExpansion.Xp.KillPct = 0.08
+GuildExpansion.Xp.QuestPct = 0.06
+
+# Flat guild XP per creature kill that gives XP, and per area discovered.
+GuildExpansion.Xp.KillFlat = 8
+GuildExpansion.Xp.ExploreFlat = 35
+
+# Quests completed at max level still give guild XP, based on the XP they would have given.
+GuildExpansion.Xp.MaxLevelQuests = 1
+
+# Daily / weekly guild XP caps (0 = unlimited).
+GuildExpansion.Xp.DailyCap = 0
+GuildExpansion.Xp.WeeklyCap = 0
+
+########################################
+# Perks
+########################################
+
+# Cash Flow: share of looted enemy money also deposited into the guild bank (rank 1 / rank 2).
+GuildExpansion.CashFlowPct1 = 0.05
+GuildExpansion.CashFlowPct2 = 0.10
+
+# Hasty Hearth: how much the Hearthstone cooldown is reduced, in milliseconds.
+GuildExpansion.HastyHearthReductionMs = 900000
+
+# Repair discount (rank 1 / rank 2).
+GuildExpansion.RepairDiscount1 = 0.10
+GuildExpansion.RepairDiscount2 = 0.20
+
+# Chug-A-Lug: extra duration for elixirs and flasks (rank 1 / rank 2). 0.5 = +50%.
+GuildExpansion.ChugALugPct1 = 0.50
+GuildExpansion.ChugALugPct2 = 1.00
+
+# Custom spells shipped in data/sql/db-world (0 = disable that perk).
+GuildExpansion.MountUpSpellId = 80000011
+GuildExpansion.MobileBankingSpellId = 80000012
+GuildExpansion.QuickAndTheDeadSpellId = 80000014
+
+# Mobile Banking summons a temporary guild bank object near the caster.
+GuildExpansion.MobileBankingGameObjectEntry = 80000020
+GuildExpansion.MobileBankingDurationMs = 60000
+
+########################################
+# Work orders
+########################################
+
+GuildExpansion.WorkOrders.Enable = 1
+
+# Orders offered to each character at a time.
+GuildExpansion.WorkOrders.Count = 3
+
+# Hours before an unfinished order expires and is replaced.
+GuildExpansion.WorkOrders.DurationHours = 24
+
+# Gold paid (in copper) = PerLevelSquared * level^2 + ValueMultiplier * vendor value of the materials.
+GuildExpansion.WorkOrders.Gold.PerLevelSquared = 25
+GuildExpansion.WorkOrders.Gold.ValueMultiplier = 3.0
+
+# Guild XP paid = GuildXpPerLevel * character level.
+GuildExpansion.WorkOrders.GuildXpPerLevel = 100
+
+# Guild Supplies paid = SuppliesBase + SuppliesPerLevel * character level.
+GuildExpansion.WorkOrders.SuppliesBase = 10
+GuildExpansion.WorkOrders.SuppliesPerLevel = 0.5
+
+########################################
+# Units (champions sent on missions)
+########################################
+
+GuildExpansion.Units.Enable = 1
+
+# Recruit candidates offered at a time; they are replaced every 24 hours.
+GuildExpansion.Units.RecruitCandidates = 3
+
+# Guild Supplies cost to recruit a candidate, by quality.
+GuildExpansion.Units.RecruitCost.Uncommon = 150
+GuildExpansion.Units.RecruitCost.Rare = 250
+GuildExpansion.Units.RecruitCost.Epic = 400
+
+# Chance (percent) that a candidate is rare / epic instead of uncommon.
+GuildExpansion.Units.RareChance = 18
+GuildExpansion.Units.EpicChance = 2
+
+########################################
+# Missions
+########################################
+
+GuildExpansion.Missions.Enable = 1
+
+# Missions offered on the guild's board at a time; offers last 24 hours.
+GuildExpansion.Missions.BoardSize = 6
+
+# Multipliers for mission supply costs and rewards.
+GuildExpansion.Missions.CostMultiplier = 1.0
+GuildExpansion.Missions.GoldMultiplier = 1.0
+GuildExpansion.Missions.GuildXpMultiplier = 1.0
+GuildExpansion.Missions.UnitXpMultiplier = 1.0
