@@ -34,6 +34,8 @@ namespace
 constexpr uint32 OFFER_LIFETIME = 24 * 3600;
 // Missing a role the mission needs (tank, healer) costs this much success chance.
 constexpr int32 MISSING_ROLE_PENALTY = 25;
+// A troop counts as this fraction of an at-level unit.
+constexpr float TROOP_SHARE = 0.75f;
 
 template <typename T>
 std::vector<T> ParseCsv(std::string const& csv)
@@ -129,6 +131,36 @@ uint32 BestArmorSubclass(Player* player)
         return ITEM_SUBCLASS_ARMOR_LEATHER;
     return ITEM_SUBCLASS_ARMOR_CLOTH;
 }
+
+// Client bag ids: 0 = backpack (slots 1-16), 1-4 = equipped bags.
+bool ClientSlotToServer(uint8 clientBag, uint8 clientSlot, uint8& bag, uint8& slot)
+{
+    if (clientSlot < 1)
+        return false;
+    if (clientBag == 0)
+    {
+        if (clientSlot > INVENTORY_SLOT_ITEM_END - INVENTORY_SLOT_ITEM_START)
+            return false;
+        bag = INVENTORY_SLOT_BAG_0;
+        slot = INVENTORY_SLOT_ITEM_START + clientSlot - 1;
+        return true;
+    }
+    if (clientBag > INVENTORY_SLOT_BAG_END - INVENTORY_SLOT_BAG_START)
+        return false;
+    bag = INVENTORY_SLOT_BAG_START + clientBag - 1;
+    slot = clientSlot - 1;
+    return true;
+}
+
+bool HasTrait(GuildUnit const& u, uint8 trait)
+{
+    return u.traits[0] == trait || u.traits[1] == trait;
+}
+
+uint32 CountTrait(std::vector<GuildUnit*> const& champions, uint8 trait)
+{
+    return uint32(std::count_if(champions.begin(), champions.end(), [trait](GuildUnit const* u) { return HasTrait(*u, trait); }));
+}
 } // namespace
 
 MissionMgr* MissionMgr::instance()
@@ -219,7 +251,8 @@ std::vector<GuildMission>& MissionMgr::GetMissions(uint32 guildId)
     std::vector<GuildMission>& missions = _guilds[guildId];
     if (QueryResult r = CharacterDatabase.Query(
             "SELECT id, template, state, level, threats, duration, cost, gold, supplies, guild_xp, unit_xp, item, "
-            "item_count, gear, units, chance, ends, expires FROM mod_gspe_mission WHERE guildid = {} ORDER BY id", guildId))
+            "item_count, gear, units, chance, ends, expires, effect, rare FROM mod_gspe_mission WHERE guildid = {} ORDER BY id",
+            guildId))
     {
         do
         {
@@ -244,6 +277,8 @@ std::vector<GuildMission>& MissionMgr::GetMissions(uint32 guildId)
             m.chance = f[15].Get<uint16>();
             m.ends = f[16].Get<uint32>();
             m.expires = f[17].Get<uint32>();
+            m.effect = f[18].Get<uint8>();
+            m.rare = f[19].Get<uint8>() != 0;
             missions.push_back(std::move(m));
         } while (r->NextRow());
     }
@@ -261,10 +296,11 @@ void MissionMgr::Save(GuildMission const& m)
 {
     CharacterDatabase.Execute(
         "REPLACE INTO mod_gspe_mission (id, guildid, template, state, level, threats, duration, cost, gold, supplies, "
-        "guild_xp, unit_xp, item, item_count, gear, units, chance, ends, expires) "
-        "VALUES ({}, {}, {}, {}, {}, '{}', {}, {}, {}, {}, {}, {}, {}, {}, {}, '{}', {}, {}, {})",
+        "guild_xp, unit_xp, item, item_count, gear, units, chance, ends, expires, effect, rare) "
+        "VALUES ({}, {}, {}, {}, {}, '{}', {}, {}, {}, {}, {}, {}, {}, {}, {}, '{}', {}, {}, {}, {}, {})",
         m.id, m.guildId, m.templateId, m.state, m.level, JoinCsv(m.threats), m.duration, m.cost, m.gold, m.supplies,
-        m.guildXp, m.unitXp, m.item, m.itemCount, m.gear, JoinCsv(m.units), m.chance, m.ends, m.expires);
+        m.guildXp, m.unitXp, m.item, m.itemCount, m.gear, JoinCsv(m.units), m.chance, m.ends, m.expires, m.effect,
+        m.rare ? 1 : 0);
 }
 
 void MissionMgr::Delete(uint32 missionId)
@@ -311,7 +347,7 @@ bool MissionMgr::GenerateOffer(uint32 guildId, std::vector<GuildMission> const& 
     uint8 const cap = sUnitMgr->LevelCap(guildId);
     uint8 top = 0;
     for (GuildUnit const& u : sUnitMgr->GetUnits(guildId))
-        if (u.status != UNIT_STATUS_CANDIDATE)
+        if (u.status != UNIT_STATUS_CANDIDATE && !sUnitMgr->IsTroop(u))
             top = std::max(top, u.level);
     if (!top)
         top = cap;
@@ -362,6 +398,28 @@ bool MissionMgr::GenerateOffer(uint32 guildId, std::vector<GuildMission> const& 
     out.duration = std::max<uint32>(5, minutes) * 60;
     out.expires = uint32(time(nullptr)) + OFFER_LIFETIME;
     SetRewards(out, *tmpl);
+
+    // Rare missions: double rewards and better gear.
+    if (roll_chance_i(int32(sGspeConfig->missionRareChance)))
+    {
+        out.rare = true;
+        out.gold *= 2;
+        out.supplies *= 2;
+        out.guildXp *= 2;
+        out.unitXp *= 2;
+        out.itemCount *= 2;
+        out.gear = out.gear ? std::min<uint8>(out.gear + 1, 4) : 3;
+    }
+
+    // Effects change the mission after rewards are set, so a slower mission doesn't pay more.
+    if (roll_chance_i(int32(sGspeConfig->missionEffectChance)))
+    {
+        out.effect = uint8(urand(MISSION_EFFECT_SLOWING, MISSION_EFFECT_COSTLY));
+        if (out.effect == MISSION_EFFECT_SLOWING)
+            out.duration *= 2;
+        else if (out.effect == MISSION_EFFECT_COSTLY)
+            out.cost *= 2;
+    }
     return true;
 }
 
@@ -411,9 +469,11 @@ void MissionMgr::FinishRunning(uint32 guildId)
         }
 }
 
-MissionMgr::Chance MissionMgr::ComputeChance(GuildMission const& m, std::vector<GuildUnit const*> const& units) const
+MissionMgr::Chance MissionMgr::ComputeChance(GuildMission const& m, std::vector<GuildUnit const*> const& units,
+                                             uint32 consumableBonus) const
 {
     Chance result;
+    result.duration = m.duration;
     MissionTemplate const* tmpl = GetTemplate(m.templateId);
     if (!tmpl)
         return result;
@@ -421,11 +481,18 @@ MissionMgr::Chance MissionMgr::ComputeChance(GuildMission const& m, std::vector<
     float chance = 0.0f;
     float const missionItemLevel = float(UnitMgr::ItemLevelForLevel(m.level));
     float const share = 60.0f / float(tmpl->slots);
+    bool hardy = false;
     for (GuildUnit const* u : units)
     {
+        if (sUnitMgr->IsTroop(*u))
+        {
+            chance += share * TROOP_SHARE;
+            continue;
+        }
         float const levelFactor = std::clamp(1.0f - 0.15f * float(std::max(0, int32(m.level) - int32(u->level))), 0.0f, 1.0f);
         float const gearFactor = std::clamp(1.0f + (float(u->itemLevel) - missionItemLevel) / 50.0f, 0.5f, 1.5f);
         chance += share * levelFactor * gearFactor;
+        hardy = hardy || HasTrait(*u, TRAIT_HARDY);
     }
 
     if (m.threats.empty())
@@ -455,7 +522,10 @@ MissionMgr::Chance MissionMgr::ComputeChance(GuildMission const& m, std::vector<
         }
     }
 
+    chance += float(consumableBonus);
     result.value = uint32(std::clamp(std::lround(chance), 0L, 200L));
+    if (hardy)
+        result.duration = m.duration * 3 / 4;
     return result;
 }
 
@@ -492,6 +562,45 @@ bool MissionMgr::ResolveUnits(Player* player, GuildMission const& m, std::vector
     return true;
 }
 
+uint32 MissionMgr::ConsumableBonus(Player* player, GuildMission const& m, MissionConsumable const& consumable,
+                                   Item** item, bool reportErrors) const
+{
+    *item = nullptr;
+    if (!consumable.set)
+        return 0;
+
+    uint8 bag = 0, slot = 0;
+    Item* it = ClientSlotToServer(consumable.bag, consumable.slot, bag, slot) ? player->GetItemByPos(bag, slot) : nullptr;
+    ItemTemplate const* proto = it ? it->GetTemplate() : nullptr;
+    if (!proto || it->IsInTrade())
+    {
+        if (reportErrors)
+            GspeAddonComm::SendError(player, "That consumable is no longer in your bags.");
+        return 0;
+    }
+
+    bool const kindOk = proto->Class == ITEM_CLASS_CONSUMABLE &&
+        (proto->SubClass == ITEM_SUBCLASS_POTION || proto->SubClass == ITEM_SUBCLASS_ELIXIR ||
+         proto->SubClass == ITEM_SUBCLASS_FLASK || proto->SubClass == ITEM_SUBCLASS_FOOD ||
+         proto->SubClass == ITEM_SUBCLASS_ITEM_ENHANCEMENT || proto->SubClass == ITEM_SUBCLASS_BANDAGE);
+    if (!kindOk)
+    {
+        if (reportErrors)
+            GspeAddonComm::SendError(player, "Missions take potions, elixirs, flasks, food, bandages or armor kits.");
+        return 0;
+    }
+
+    if (proto->ItemLevel + 10 < UnitMgr::ItemLevelForLevel(m.level))
+    {
+        if (reportErrors)
+            GspeAddonComm::SendError(player, "That consumable is too low level for this mission.");
+        return 0;
+    }
+
+    *item = it;
+    return proto->SubClass == ITEM_SUBCLASS_FLASK ? sGspeConfig->flaskBonus : sGspeConfig->consumableBonus;
+}
+
 bool MissionMgr::CheckRequest(Player* player)
 {
     if (!sGspeConfig->enable || !sGspeConfig->missionsEnable || !sGspeConfig->unitsEnable)
@@ -525,12 +634,13 @@ void MissionMgr::SendMissionLine(Player* player, GuildMission const& m)
 {
     uint32 const now = uint32(time(nullptr));
     // M\tid\tstate\ttemplate\tlevel\titemLevel\tthreats\tduration\tcost\tgold\tsupplies\tguildXp\tunitXp\titem\t
-    //   itemCount\tgear\tchance\tunits\tremaining\texpiresIn
+    //   itemCount\tgear\tchance\tunits\tremaining\texpiresIn\teffect\trare
     GspeAddonComm::Send(player, Acore::StringFormat(
-        "M\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        "M\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         m.id, uint32(m.state), m.templateId, uint32(m.level), UnitMgr::ItemLevelForLevel(m.level), JoinCsv(m.threats),
         m.duration, m.cost, m.gold, m.supplies, m.guildXp, m.unitXp, m.item, m.itemCount, uint32(m.gear), m.chance,
-        JoinCsv(m.units), m.ends > now ? m.ends - now : 0, m.expires > now ? m.expires - now : 0));
+        JoinCsv(m.units), m.ends > now ? m.ends - now : 0, m.expires > now ? m.expires - now : 0, uint32(m.effect),
+        m.rare ? 1 : 0));
 }
 
 void MissionMgr::SendBoard(Player* player)
@@ -554,7 +664,8 @@ void MissionMgr::SendBoard(Player* player)
     GspeAddonComm::Send(player, "ME");
 }
 
-void MissionMgr::HandlePreview(Player* player, uint32 missionId, std::vector<uint32> const& unitIds)
+void MissionMgr::HandlePreview(Player* player, uint32 missionId, std::vector<uint32> const& unitIds,
+                               MissionConsumable const& consumable)
 {
     if (!player->GetGuildId())
         return;
@@ -564,13 +675,16 @@ void MissionMgr::HandlePreview(Player* player, uint32 missionId, std::vector<uin
     if (!m || m->state != MISSION_STATE_OFFER || !ResolveUnits(player, *m, unitIds, units, false))
         return;
 
-    Chance const c = ComputeChance(*m, std::vector<GuildUnit const*>(units.begin(), units.end()));
-    // MCHANCE\tid\tchance\tcountered\tmissingRoles
-    GspeAddonComm::Send(player, Acore::StringFormat("MCHANCE\t{}\t{}\t{}\t{}",
-        missionId, c.value, JoinCsv(c.countered), JoinCsv(c.missingRoles)));
+    Item* item = nullptr;
+    uint32 const bonus = ConsumableBonus(player, *m, consumable, &item, false);
+    Chance const c = ComputeChance(*m, std::vector<GuildUnit const*>(units.begin(), units.end()), bonus);
+    // MCHANCE\tid\tchance\tcountered\tmissingRoles\tduration\tconsumableBonus
+    GspeAddonComm::Send(player, Acore::StringFormat("MCHANCE\t{}\t{}\t{}\t{}\t{}\t{}",
+        missionId, c.value, JoinCsv(c.countered), JoinCsv(c.missingRoles), c.duration, bonus));
 }
 
-void MissionMgr::HandleStart(Player* player, uint32 missionId, std::vector<uint32> const& unitIds)
+void MissionMgr::HandleStart(Player* player, uint32 missionId, std::vector<uint32> const& unitIds,
+                             MissionConsumable const& consumable)
 {
     if (!CheckRequest(player))
         return;
@@ -593,6 +707,11 @@ void MissionMgr::HandleStart(Player* player, uint32 missionId, std::vector<uint3
         return;
     }
 
+    Item* consumableItem = nullptr;
+    uint32 const bonus = ConsumableBonus(player, *m, consumable, &consumableItem, true);
+    if (consumable.set && !consumableItem)
+        return;
+
     std::vector<GuildMission> const& missions = GetMissions(guildId);
     uint32 const running = uint32(std::count_if(missions.begin(), missions.end(),
         [](GuildMission const& x) { return x.state == MISSION_STATE_RUNNING; }));
@@ -608,7 +727,15 @@ void MissionMgr::HandleStart(Player* player, uint32 missionId, std::vector<uint3
         return;
     }
 
-    m->chance = ComputeChance(*m, std::vector<GuildUnit const*>(units.begin(), units.end())).value;
+    if (consumableItem)
+    {
+        uint32 one = 1;
+        player->DestroyItemCount(consumableItem, one, true);
+    }
+
+    Chance const c = ComputeChance(*m, std::vector<GuildUnit const*>(units.begin(), units.end()), bonus);
+    m->chance = c.value;
+    m->duration = c.duration;
     m->state = MISSION_STATE_RUNNING;
     m->ends = uint32(time(nullptr)) + m->duration;
     m->units.clear();
@@ -673,22 +800,70 @@ void MissionMgr::HandleCollect(Player* player, uint32 missionId)
     }
 
     GuildMission const m = *found;
+    uint8 const gearLevel = std::min<uint8>(m.level, uint8(player->GetLevel()));
+
+    std::vector<GuildUnit*> champions, troops;
+    for (uint32 unitId : m.units)
+        if (GuildUnit* u = sUnitMgr->FindUnit(guildId, unitId))
+            (sUnitMgr->IsTroop(*u) ? troops : champions).push_back(u);
+
     bool const success = urand(1, 100) <= std::min<uint32>(m.chance, 100);
-    bool const bonus = success && m.chance > 100 && urand(1, 100) <= m.chance - 100;
+    uint32 bonusChance = 0;
+    if (success && m.effect != MISSION_EFFECT_CURSED)
+        bonusChance = (m.chance > 100 ? m.chance - 100 : 0) + 10 * CountTrait(champions, TRAIT_LUCKY);
+    bool const bonus = bonusChance && urand(1, 100) <= bonusChance;
 
     uint32 gold = 0, supplies = 0, guildXp = 0, item = 0, itemCount = 0, gear = 0;
+    uint32 extraItem = 0, extraCount = 0, treasure = 0;
+    uint32 salvageItem = 0, salvageCount = 0, salvageGold = 0;
     if (success)
     {
-        gold = bonus ? m.gold * 2 : m.gold;
+        gold = uint32(float(bonus ? m.gold * 2 : m.gold) * (1.0f + 0.25f * float(CountTrait(champions, TRAIT_SCAVENGER))));
         supplies = m.supplies;
+        if (uint32 const sergeants = CountTrait(champions, TRAIT_SUPPLY_SERGEANT))
+            supplies += std::max<uint32>(5 * sergeants, supplies * sergeants / 4);
         guildXp = m.guildXp;
         item = m.item;
         itemCount = bonus ? m.itemCount * 2 : m.itemCount;
         if (m.gear)
-            gear = RollGear(player, std::min<uint8>(m.level, uint8(player->GetLevel())), m.gear);
+            gear = RollGear(player, gearLevel, m.gear);
 
-        if (gold)
-            player->ModifyMoney(int32(std::min<uint32>(gold, uint32(INT32_MAX))));
+        // Gathering traits: extra materials of their kind.
+        uint32 gatherers = 0;
+        uint16 gatherSkill = 0;
+        for (auto [trait, skill] : { std::pair<uint8, uint16>{ TRAIT_HERBALIST, SKILL_HERBALISM },
+                                     std::pair<uint8, uint16>{ TRAIT_PROSPECTOR, SKILL_MINING },
+                                     std::pair<uint8, uint16>{ TRAIT_SKINNER, SKILL_SKINNING } })
+            if (uint32 const n = CountTrait(champions, trait))
+            {
+                gatherers += n;
+                gatherSkill = skill;
+            }
+        if (gatherers && (extraItem = sWorkOrderMgr->RandomMaterial(m.level, gatherSkill)))
+            extraCount = urand(5, 10) * gatherers;
+
+        // Treasure Hunter: a chance of an extra piece of gear on any mission.
+        for (uint32 i = 0; i < CountTrait(champions, TRAIT_TREASURE_HUNTER) && !treasure; ++i)
+            if (roll_chance_i(25))
+                treasure = RollGear(player, gearLevel, roll_chance_i(20) ? 3 : 2);
+
+        // Salvage: gear, materials or gold.
+        if (roll_chance_i(int32(sGspeConfig->missionSalvageChance)))
+        {
+            uint32 const kind = urand(1, 100);
+            if (kind <= 45)
+            {
+                salvageItem = RollGear(player, gearLevel, roll_chance_i(25) ? 3 : 2);
+                salvageCount = salvageItem ? 1 : 0;
+            }
+            else if (kind <= 80 && (salvageItem = sWorkOrderMgr->RandomMaterial(m.level)))
+                salvageCount = urand(5, 15);
+            if (!salvageItem)
+                salvageGold = std::max<uint32>(m.gold / 2, uint32(m.level) * m.level * 5);
+        }
+
+        if (uint32 const totalGold = gold + salvageGold)
+            player->ModifyMoney(int32(std::min<uint32>(totalGold, uint32(INT32_MAX))));
         if (supplies)
             sGuildProgressMgr->AddSupplies(guildId, supplies);
         if (guildXp)
@@ -697,6 +872,12 @@ void MissionMgr::HandleCollect(Player* player, uint32 missionId)
             GiveItem(player, item, itemCount);
         if (gear)
             GiveItem(player, gear, 1);
+        if (extraItem && extraCount)
+            GiveItem(player, extraItem, extraCount);
+        if (treasure)
+            GiveItem(player, treasure, 1);
+        if (salvageItem && salvageCount)
+            GiveItem(player, salvageItem, salvageCount);
     }
     else
     {
@@ -709,24 +890,47 @@ void MissionMgr::HandleCollect(Player* player, uint32 missionId)
     uint32 const unitXp = success ? m.unitXp : m.unitXp / 2;
     uint8 const cap = sUnitMgr->LevelCap(guildId);
     uint32 levelUps = 0;
-    for (uint32 unitId : m.units)
+    for (GuildUnit* u : champions)
     {
-        if (GuildUnit* u = sUnitMgr->FindUnit(guildId, unitId))
+        uint32 const xp = HasTrait(*u, TRAIT_QUICK_STUDY) ? unitXp * 3 / 2 : unitXp;
+        levelUps += sUnitMgr->AddXp(*u, xp, cap);
+        u->status = UNIT_STATUS_IDLE;
+        u->mission = 0;
+        sUnitMgr->SaveUnit(*u);
+    }
+
+    // Troops die on lethal missions and otherwise wear out, unless a Field Medic went along.
+    bool const medic = CountTrait(champions, TRAIT_FIELD_MEDIC) > 0;
+    uint32 troopsLost = 0;
+    std::vector<uint32> lostIds;
+    for (GuildUnit* u : troops)
+    {
+        if (m.effect == MISSION_EFFECT_LETHAL || (!medic && u->vitality <= 1))
         {
-            levelUps += sUnitMgr->AddXp(*u, unitXp, cap);
-            u->status = UNIT_STATUS_IDLE;
-            u->mission = 0;
-            sUnitMgr->SaveUnit(*u);
+            lostIds.push_back(u->id);
+            continue;
         }
+        if (!medic)
+            --u->vitality;
+        u->status = UNIT_STATUS_IDLE;
+        u->mission = 0;
+        sUnitMgr->SaveUnit(*u);
+    }
+    for (uint32 id : lostIds)
+    {
+        sUnitMgr->RemoveUnit(guildId, id);
+        ++troopsLost;
     }
 
     Delete(missionId);
     std::erase_if(GetMissions(guildId), [missionId](GuildMission const& x) { return x.id == missionId; });
 
-    // MRESULT\tid\ttemplate\tsuccess\tbonus\tgold\tsupplies\tguildXp\tunitXp\titem\titemCount\tgear\tlevelUps
-    GspeAddonComm::Send(player, Acore::StringFormat("MRESULT\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+    // MRESULT\tid\ttemplate\tsuccess\tbonus\tgold\tsupplies\tguildXp\tunitXp\titem\titemCount\tgear\tlevelUps\t
+    //   extraItem\textraCount\ttreasure\tsalvageItem\tsalvageCount\tsalvageGold\ttroopsLost
+    GspeAddonComm::Send(player, Acore::StringFormat(
+        "MRESULT\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         missionId, m.templateId, success ? 1 : 0, bonus ? 1 : 0, gold, supplies, guildXp, unitXp, item, itemCount,
-        gear, levelUps));
+        gear, levelUps, extraItem, extraCount, treasure, salvageItem, salvageCount, salvageGold, troopsLost));
     SendBoard(player);
     sUnitMgr->SendUnits(player);
 }

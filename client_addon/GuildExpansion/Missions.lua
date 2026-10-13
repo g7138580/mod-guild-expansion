@@ -11,7 +11,7 @@ local UI = GE.UI
 
 local ROW_HEIGHT = 74
 local MAX_ROWS = 10
-local MAX_UNIT_ROWS = 6
+local MAX_UNIT_ROWS = 12
 local LEFT_WIDTH = 290
 
 local TYPES = {
@@ -24,10 +24,20 @@ local TYPES = {
     [7] = { name = "Raid",       icon = "INV_Misc_Head_Dragon_01" },
 }
 
+-- Mission effects. Keep in sync with MissionEffect in src/GspeMissions.h.
+local EFFECTS = {
+    [1] = { name = "Slowing", icon = "Spell_Nature_Slow",            desc = "This mission takes twice as long." },
+    [2] = { name = "Lethal",  icon = "Spell_Shadow_DeathScream",     desc = "Troops sent on this mission will die." },
+    [3] = { name = "Cursed",  icon = "Spell_Shadow_CurseOfTounges",  desc = "This mission can't give bonus loot." },
+    [4] = { name = "Costly",  icon = "INV_Misc_Coin_17",             desc = "This mission costs twice the supplies." },
+}
+
 local listTab = "available"   -- "available" or "running"
 local view = "list"           -- "list", "mission" or "result"
 local selectedId
 local slots = {}              -- slot index -> unit id
+local consumable              -- { bag, slot, item } sent with the mission
+local lastPickup              -- bag and slot of the last item picked up from the bags
 local dragUnit
 local thePage
 
@@ -48,11 +58,17 @@ local function FindOffer(id)
 end
 
 local function FindUnit(id)
-    for _, u in ipairs(GE.units) do
-        if u.id == id then
-            return u
+    for _, list in ipairs({ GE.units, GE.troops }) do
+        for _, u in ipairs(list) do
+            if u.id == id then
+                return u
+            end
         end
     end
+end
+
+local function ConsumableArg()
+    return consumable and string.format(" C%d.%d", consumable.bag, consumable.slot) or ""
 end
 
 -- The running mission a unit is on, if any.
@@ -88,13 +104,14 @@ end
 local function SendPreview()
     if selectedId then
         local list = AssignedList()
-        GE.Send("MPREVIEW " .. selectedId .. (#list > 0 and (" " .. table.concat(list, " ")) or ""))
+        GE.Send("MPREVIEW " .. selectedId .. ConsumableArg() .. (#list > 0 and (" " .. table.concat(list, " ")) or ""))
     end
 end
 
 local function OpenMission(id)
     selectedId = id
     slots = {}
+    consumable = nil
     GE.chance = nil
     view = "mission"
     SendPreview()
@@ -142,6 +159,10 @@ local function ThreatTooltip(self)
         GameTooltip:AddLine("Countered by: " .. a.name, 1, 1, 1)
     end
 end
+
+hooksecurefunc("PickupContainerItem", function(bag, slot)
+    lastPickup = { bag = bag, slot = slot }
+end)
 
 -- List view ---------------------------------------------------------------
 
@@ -220,6 +241,17 @@ local function BuildList(page)
                 tb:SetPoint("LEFT", row.threats[t - 1], "RIGHT", 4, 0)
             end
             row.threats[t] = tb
+        end
+
+        row.effect = UI.IconButton(row, 24)
+        row.effect:SetPoint("LEFT", row.threats[4], "RIGHT", 14, 0)
+        row.effect.border:SetVertexColor(1, 0.3, 0.3)
+        row.effect.tooltip = function(self)
+            local e = EFFECTS[self.effect]
+            if e then
+                GameTooltip:AddLine(e.name, 1, 0.3, 0.3)
+                GameTooltip:AddLine(e.desc, 1, 1, 1, true)
+            end
         end
 
         row.rewards = {}
@@ -308,7 +340,20 @@ local function RefreshList(page)
             row.level:SetText(m.level)
             row.ilvl:SetText("(" .. m.itemLevel .. ")")
             row.icon:SetTexture("Interface\\Icons\\" .. TypeOf(m).icon)
-            row.name:SetText(tmpl.name .. "  " .. DurationText(m.duration))
+            row.name:SetText((m.rare and "|cff3399ffRare:|r " or "") .. tmpl.name .. "  " .. DurationText(m.duration))
+            if m.rare then
+                row.bg:SetVertexColor(0.25, 0.32, 0.5)
+            else
+                row.bg:SetVertexColor(0.42, 0.36, 0.28)
+            end
+            row.effect.effect = m.effect
+            if EFFECTS[m.effect] then
+                row.effect.icon:SetTexture("Interface\\Icons\\" .. EFFECTS[m.effect].icon)
+                row.effect.border:Show()
+                row.effect:Show()
+            else
+                row.effect:Hide()
+            end
 
             for t, tb in ipairs(row.threats) do
                 tb.threat = m.threats[t]
@@ -424,12 +469,21 @@ local function BuildUnitList(page, parent)
     ui.unitHint:SetJustifyH("LEFT")
     ui.unitHint:SetText("Drag a unit onto a slot, or click it to fill the next free slot.")
 
+    ui.unitScroll = CreateFrame("ScrollFrame", "GuildExpansionMissionUnitScroll", left, "UIPanelScrollFrameTemplate")
+    ui.unitScroll.scrollBarHideable = true
+    ui.unitScroll:SetPoint("TOPLEFT", 8, -36)
+    ui.unitScroll:SetPoint("BOTTOMRIGHT", -28, 40)
+    ui.unitContent = CreateFrame("Frame", nil, ui.unitScroll)
+    ui.unitContent:SetWidth(LEFT_WIDTH - 36)
+    ui.unitContent:SetHeight(1)
+    ui.unitScroll:SetScrollChild(ui.unitContent)
+
     ui.unitRows = {}
     for i = 1, MAX_UNIT_ROWS do
-        local r = CreateFrame("Button", nil, left)
-        r:SetWidth(LEFT_WIDTH - 20)
+        local r = CreateFrame("Button", nil, ui.unitContent)
+        r:SetWidth(LEFT_WIDTH - 40)
         r:SetHeight(56)
-        r:SetPoint("TOPLEFT", 10, -40 - (i - 1) * 60)
+        r:SetPoint("TOPLEFT", 0, -(i - 1) * 60)
         r:SetBackdrop({ bgFile = "Interface\\Tooltips\\UI-Tooltip-Background", tile = true, tileSize = 16 })
         r:SetBackdropColor(0.15, 0.12, 0.08, 0.8)
         r:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
@@ -520,8 +574,17 @@ local function RefreshUnitList(page, mission)
         threatSet[t] = true
     end
 
+    local all = {}
+    for _, u in ipairs(GE.units) do
+        all[#all + 1] = u
+    end
+    for _, u in ipairs(GE.troops) do
+        all[#all + 1] = u
+    end
+    ui.unitContent:SetHeight(math.max(1, #all * 60))
+
     for i, r in ipairs(ui.unitRows) do
-        local u = GE.units[i]
+        local u = all[i]
         if u then
             local ut = GE.unitTemplates[u.template]
             r.unitId = u.id
@@ -536,7 +599,11 @@ local function RefreshUnitList(page, mission)
                 r.role:Hide()
             end
             r.name:SetText("|cff" .. GE.QualityHex(u.quality) .. u.name .. "|r")
-            r.info:SetText(IsAssigned(u.id) and "|cff80c0ffAssigned to this mission|r" or UnitStatusText(u))
+            local status = UnitStatusText(u)
+            if GE.IsTroop(u) and u.status == 0 then
+                status = string.format("Troop  -  %d mission%s left", u.vitality, u.vitality == 1 and "" or "s")
+            end
+            r.info:SetText(IsAssigned(u.id) and "|cff80c0ffAssigned to this mission|r" or status)
             for a, tex in ipairs(r.abilities) do
                 local def = GE.ABILITIES[u.abilities[a] or 0]
                 if def then
@@ -686,9 +753,65 @@ local function BuildMission(page)
         ui.slots[i] = s
     end
 
+    ui.mEffect = right:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    ui.mEffect:SetPoint("TOPLEFT", ui.mNeeds, "TOPLEFT", 300, 0)
+
     local rewardsHeader = right:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     rewardsHeader:SetPoint("TOPLEFT", slotsHeader, "BOTTOMLEFT", 0, -104)
     rewardsHeader:SetText("Rewards")
+
+    -- Consumable: drag a potion, elixir, flask, food or bandage here for bonus success.
+    local consHeader = right:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    consHeader:SetPoint("TOPLEFT", rewardsHeader, "TOPLEFT", 360, 0)
+    consHeader:SetText("Consumable")
+    ui.mCons = UI.IconButton(right, 40)
+    ui.mCons:SetPoint("TOPLEFT", consHeader, "BOTTOMLEFT", 0, -8)
+    ui.mCons:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    ui.mCons.bg = ui.mCons:CreateTexture(nil, "BACKGROUND")
+    ui.mCons.bg:SetTexture("Interface\\Buttons\\UI-EmptySlot")
+    ui.mCons.bg:SetWidth(66)
+    ui.mCons.bg:SetHeight(66)
+    ui.mCons.bg:SetPoint("CENTER")
+    ui.mCons:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+    ui.mConsText = right:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    ui.mConsText:SetPoint("LEFT", ui.mCons, "RIGHT", 10, 0)
+    ui.mConsText:SetWidth(150)
+    ui.mConsText:SetJustifyH("LEFT")
+    local function PlaceConsumable()
+        local kind, itemId = GetCursorInfo()
+        if kind ~= "item" then
+            return false
+        end
+        local link = lastPickup and GetContainerItemLink(lastPickup.bag, lastPickup.slot)
+        if link and tonumber(link:match("item:(%d+)")) == itemId then
+            consumable = { bag = lastPickup.bag, slot = lastPickup.slot, item = itemId }
+            SendPreview()
+        else
+            UIErrorsFrame:AddMessage("Drag the consumable from your bags.", 1.0, 0.1, 0.1, 1.0)
+        end
+        ClearCursor()
+        page.refresh(page)
+        return true
+    end
+    ui.mCons:SetScript("OnReceiveDrag", PlaceConsumable)
+    ui.mCons:SetScript("OnClick", function(self, button)
+        if button == "RightButton" then
+            consumable = nil
+            SendPreview()
+            page.refresh(page)
+        else
+            PlaceConsumable()
+        end
+    end)
+    ui.mCons.tooltip = function()
+        if consumable then
+            GameTooltip:SetHyperlink("item:" .. consumable.item)
+            GameTooltip:AddLine("Used up when the mission starts. Right-click to remove.", 0, 1, 0, true)
+        else
+            GameTooltip:AddLine("Consumable")
+            GameTooltip:AddLine("Drag a potion, elixir, food, bandage or flask near the mission's level here for extra success chance. It is used up when the mission starts.", 1, 1, 1, true)
+        end
+    end
     ui.mRewards = {}
     for i = 1, 6 do
         local rb = UI.IconButton(right, 40)
@@ -705,7 +828,7 @@ local function BuildMission(page)
     ui.mStart:SetScript("OnClick", function()
         local list = AssignedList()
         if selectedId and #list > 0 then
-            GE.Send("MSTART " .. selectedId .. " " .. table.concat(list, " "))
+            GE.Send("MSTART " .. selectedId .. ConsumableArg() .. " " .. table.concat(list, " "))
         end
     end)
     ui.mCost = right:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
@@ -726,8 +849,23 @@ local function RefreshMission(page)
     RefreshUnitList(page, m)
 
     ui.mTitle:SetText(tmpl.name)
-    ui.mInfo:SetText(string.format("Level %d %s  -  %s  -  Item level %d", m.level, TypeOf(m).name,
-        UI.FormatDuration(m.duration), m.itemLevel))
+    local duration = chance and chance.duration or m.duration
+    ui.mInfo:SetText(string.format("%sLevel %d %s  -  %s  -  Item level %d", m.rare and "|cff3399ffRare|r  -  " or "",
+        m.level, TypeOf(m).name, UI.FormatDuration(duration), m.itemLevel)
+        .. (duration < m.duration and "  |cff80ff80(Hardy)|r" or ""))
+    local effect = EFFECTS[m.effect]
+    ui.mEffect:SetText(effect and ("|cffff5050" .. effect.name .. ":|r " .. effect.desc) or "")
+
+    if consumable then
+        ui.mCons.icon:SetTexture(GE.ItemIcon(consumable.item))
+        ui.mCons.icon:Show()
+        local bonus = chance and chance.consumableBonus or 0
+        ui.mConsText:SetText(bonus > 0 and string.format("|cff80ff80+%d%% success|r", bonus)
+            or "|cffff4040Not usable for this mission|r")
+    else
+        ui.mCons.icon:Hide()
+        ui.mConsText:SetText("|cffaaaaaaOptional: drag a consumable here|r")
+    end
     ui.mDesc:SetText(tmpl.desc or "")
 
     local value = chance and chance.value or 0
@@ -826,7 +964,7 @@ local function BuildResult(page)
     ui.rBonus:SetPoint("TOP", ui.rName, "BOTTOM", 0, -10)
 
     ui.rRewards = {}
-    for i = 1, 6 do
+    for i = 1, 9 do
         local rb = UI.IconButton(v, 48)
         ui.rRewards[i] = rb
     end
@@ -861,16 +999,20 @@ local function RefreshResult(page)
         gold = res.gold, guildXp = res.guildXp, supplies = res.supplies,
         item = res.item, itemCount = res.itemCount,
     })
-    -- Show the actual gear piece rather than a generic gear icon.
-    if res.gear > 0 and shown < #ui.rRewards then
-        shown = shown + 1
-        local rb = ui.rRewards[shown]
-        local _, _, quality = GetItemInfo(res.gear)
-        rb.icon:SetTexture(GE.ItemIcon(res.gear))
-        rb.count:SetText("")
-        UI.SetBorderQuality(rb, quality or 2)
-        rb.tooltip = function() GameTooltip:SetHyperlink("item:" .. res.gear) end
-        rb:Show()
+    -- Actual items: gear, trait bonus materials, Treasure Hunter finds and salvage.
+    for _, entry in ipairs({ { res.gear, 1 }, { res.extraItem, res.extraCount }, { res.treasure, 1 },
+                             { res.salvageItem, res.salvageCount } }) do
+        local itemId, count = entry[1], entry[2]
+        if itemId > 0 and count > 0 and shown < #ui.rRewards then
+            shown = shown + 1
+            local rb = ui.rRewards[shown]
+            local _, _, quality = GetItemInfo(itemId)
+            rb.icon:SetTexture(GE.ItemIcon(itemId))
+            rb.count:SetText(count > 1 and count or "")
+            UI.SetBorderQuality(rb, quality or 1)
+            rb.tooltip = function() GameTooltip:SetHyperlink("item:" .. itemId) end
+            rb:Show()
+        end
     end
     local width = shown * 56 - 8
     for i, rb in ipairs(ui.rRewards) do
@@ -881,6 +1023,18 @@ local function RefreshResult(page)
     local lines = {}
     if not res.success then
         lines[#lines + 1] = "Half of the supply cost was returned."
+    end
+    if res.extraCount > 0 then
+        lines[#lines + 1] = "|cffffd200Your units' gathering traits brought back extra materials.|r"
+    end
+    if res.treasure > 0 then
+        lines[#lines + 1] = "|cffffd200A Treasure Hunter found an extra piece of gear.|r"
+    end
+    if res.salvageItem > 0 or res.salvageGold > 0 then
+        lines[#lines + 1] = "|cff80c0ffSalvage found!|r" .. (res.salvageGold > 0 and ("  " .. GE.FormatMoney(res.salvageGold)) or "")
+    end
+    if res.troopsLost > 0 then
+        lines[#lines + 1] = string.format("|cffff4040%d troop%s lost.|r", res.troopsLost, res.troopsLost == 1 and "" or "s")
     end
     lines[#lines + 1] = "|cffcc88ffEach unit gained " .. GE.FormatNumber(res.unitXp) .. " XP|r"
         .. (res.levelUps > 0 and string.format("  |cff80ff80(%d level%s gained)|r", res.levelUps, res.levelUps == 1 and "" or "s") or "")

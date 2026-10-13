@@ -128,7 +128,7 @@ std::vector<GuildUnit>& UnitMgr::GetUnits(uint32 guildId)
     std::vector<GuildUnit>& units = _guilds[guildId];
     if (QueryResult r = CharacterDatabase.Query(
             "SELECT id, template, name, race, gender, quality, level, xp, item_level, ability1, ability2, "
-            "trait1, trait2, status, mission, cost, expires FROM mod_gspe_unit WHERE guildid = {} ORDER BY id", guildId))
+            "trait1, trait2, status, mission, cost, expires, vitality FROM mod_gspe_unit WHERE guildid = {} ORDER BY id", guildId))
     {
         do
         {
@@ -152,6 +152,7 @@ std::vector<GuildUnit>& UnitMgr::GetUnits(uint32 guildId)
             u.mission = f[14].Get<uint32>();
             u.cost = f[15].Get<uint32>();
             u.expires = f[16].Get<uint32>();
+            u.vitality = f[17].Get<uint8>();
             units.push_back(std::move(u));
         } while (r->NextRow());
     }
@@ -171,15 +172,27 @@ void UnitMgr::SaveUnit(GuildUnit const& u)
     CharacterDatabase.EscapeString(name);
     CharacterDatabase.Execute(
         "REPLACE INTO mod_gspe_unit (id, guildid, template, name, race, gender, quality, level, xp, item_level, "
-        "ability1, ability2, trait1, trait2, status, mission, cost, expires) "
-        "VALUES ({}, {}, {}, '{}', {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
+        "ability1, ability2, trait1, trait2, status, mission, cost, expires, vitality) "
+        "VALUES ({}, {}, {}, '{}', {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
         u.id, u.guildId, u.templateId, name, u.race, u.gender, u.quality, u.level, u.xp, u.itemLevel,
-        u.abilities[0], u.abilities[1], u.traits[0], u.traits[1], u.status, u.mission, u.cost, u.expires);
+        u.abilities[0], u.abilities[1], u.traits[0], u.traits[1], u.status, u.mission, u.cost, u.expires, u.vitality);
 }
 
 void UnitMgr::DeleteUnit(uint32 unitId)
 {
     CharacterDatabase.Execute("DELETE FROM mod_gspe_unit WHERE id = {}", unitId);
+}
+
+void UnitMgr::RemoveUnit(uint32 guildId, uint32 unitId)
+{
+    DeleteUnit(unitId);
+    std::erase_if(GetUnits(guildId), [unitId](GuildUnit const& u) { return u.id == unitId; });
+}
+
+bool UnitMgr::IsTroop(GuildUnit const& unit) const
+{
+    UnitTemplate const* t = GetTemplate(unit.templateId);
+    return t && t->kind == UNIT_KIND_TROOP;
 }
 
 void UnitMgr::OnGuildDisband(uint32 guildId)
@@ -219,7 +232,7 @@ UnitTemplate const* UnitMgr::PickTemplate(int8 role) const
 {
     uint32 total = 0;
     for (UnitTemplate const& t : _templates)
-        if (role < 0 || t.role == uint8(role))
+        if (t.kind != UNIT_KIND_TROOP && (role < 0 || t.role == uint8(role)))
             total += t.weight;
     if (!total)
         return nullptr;
@@ -227,7 +240,7 @@ UnitTemplate const* UnitMgr::PickTemplate(int8 role) const
     uint32 roll = urand(1, total);
     for (UnitTemplate const& t : _templates)
     {
-        if (role >= 0 && t.role != uint8(role))
+        if (t.kind == UNIT_KIND_TROOP || (role >= 0 && t.role != uint8(role)))
             continue;
         if (roll <= t.weight)
             return &t;
@@ -310,7 +323,7 @@ void UnitMgr::EnsureStarterUnits(uint32 guildId, std::vector<GuildUnit>& units)
     if (!r || r->Fetch()[0].Get<uint8>())
         return;
 
-    if (std::any_of(units.begin(), units.end(), [](GuildUnit const& u) { return u.status != UNIT_STATUS_CANDIDATE; }))
+    if (std::any_of(units.begin(), units.end(), [this](GuildUnit const& u) { return u.status != UNIT_STATUS_CANDIDATE && !IsTroop(u); }))
     {
         CharacterDatabase.Execute("UPDATE mod_gspe_progress SET starter_units = 1 WHERE guildid = {}", guildId);
         return;
@@ -375,13 +388,13 @@ bool UnitMgr::CheckRequest(Player* player)
 {
     if (!sGspeConfig->enable || !sGspeConfig->unitsEnable)
     {
-        GspeAddonComm::Send(player, "UB\t0\t0\t0\t0\t0\t2");
+        GspeAddonComm::Send(player, "UB\t0\t0\t0\t0\t0\t2\t0\t0\t0");
         GspeAddonComm::Send(player, "UE");
         return false;
     }
     if (!player->GetGuildId())
     {
-        GspeAddonComm::Send(player, "UB\t0\t0\t0\t0\t0\t1");
+        GspeAddonComm::Send(player, "UB\t0\t0\t0\t0\t0\t1\t0\t0\t0");
         GspeAddonComm::Send(player, "UE");
         return false;
     }
@@ -390,21 +403,27 @@ bool UnitMgr::CheckRequest(Player* player)
 
 void UnitMgr::SendTemplates(Player* player)
 {
-    // UT\tid\tkind\trole\tclass\ticon\tname
+    // UT\tid\tkind\trole\tclass\ticon\tname\tabilities
     for (UnitTemplate const& t : _templates)
-        GspeAddonComm::Send(player, Acore::StringFormat("UT\t{}\t{}\t{}\t{}\t{}\t{}",
+    {
+        std::string abilities;
+        for (uint8 a : t.abilities)
+            abilities += (abilities.empty() ? "" : ",") + std::to_string(a);
+        GspeAddonComm::Send(player, Acore::StringFormat("UT\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             t.id, uint32(t.kind), uint32(t.role), uint32(t.classId),
-            GspeAddonComm::Sanitize(t.icon, 64), GspeAddonComm::Sanitize(t.name, 48)));
+            GspeAddonComm::Sanitize(t.icon, 64), GspeAddonComm::Sanitize(t.name, 48), abilities));
+    }
     GspeAddonComm::Send(player, "UTE");
 }
 
 void UnitMgr::SendUnitLine(Player* player, GuildUnit const& u)
 {
-    // U\tid\ttemplate\trace\tgender\tquality\tlevel\txp\txpNext\titemLevel\ta1\ta2\tt1\tt2\tstatus\tcost\tname
-    GspeAddonComm::Send(player, Acore::StringFormat("U\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+    // U\tid\ttemplate\trace\tgender\tquality\tlevel\txp\txpNext\titemLevel\ta1\ta2\tt1\tt2\tstatus\tcost\tvitality\tname
+    GspeAddonComm::Send(player, Acore::StringFormat("U\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         u.id, u.templateId, uint32(u.race), uint32(u.gender), uint32(u.quality), uint32(u.level), u.xp,
         XpForNextLevel(u.level), u.itemLevel, uint32(u.abilities[0]), uint32(u.abilities[1]),
-        uint32(u.traits[0]), uint32(u.traits[1]), uint32(u.status), u.cost, GspeAddonComm::Sanitize(u.name, 48)));
+        uint32(u.traits[0]), uint32(u.traits[1]), uint32(u.status), u.cost, uint32(u.vitality),
+        GspeAddonComm::Sanitize(u.name, 48)));
 }
 
 void UnitMgr::SendUnits(Player* player)
@@ -419,7 +438,7 @@ void UnitMgr::SendUnits(Player* player)
     RefreshCandidates(guildId, units, false);
 
     uint32 const now = uint32(time(nullptr));
-    uint32 unitCount = 0, candidateCount = 0, candidatesExpireIn = 0;
+    uint32 unitCount = 0, troopCount = 0, candidateCount = 0, candidatesExpireIn = 0;
     for (GuildUnit const& u : units)
     {
         if (u.status == UNIT_STATUS_CANDIDATE)
@@ -427,14 +446,16 @@ void UnitMgr::SendUnits(Player* player)
             ++candidateCount;
             candidatesExpireIn = u.expires > now ? u.expires - now : 0;
         }
+        else if (IsTroop(u))
+            ++troopCount;
         else
             ++unitCount;
     }
 
-    // UB\tunits\tmaxUnits\tlevelCap\tcandidates\tcandidatesExpireIn\tstatus
-    GspeAddonComm::Send(player, Acore::StringFormat("UB\t{}\t{}\t{}\t{}\t{}\t0",
+    // UB\tunits\tmaxUnits\tlevelCap\tcandidates\tcandidatesExpireIn\tstatus\ttroops\tmaxTroops\ttroopCost
+    GspeAddonComm::Send(player, Acore::StringFormat("UB\t{}\t{}\t{}\t{}\t{}\t0\t{}\t{}\t{}",
         unitCount, GspePerks::UnitSlots(guildLevel), uint32(LevelCap(guildId)),
-        candidateCount, candidatesExpireIn));
+        candidateCount, candidatesExpireIn, troopCount, GspePerks::TroopSlots(guildLevel), sGspeConfig->troopCost));
     for (GuildUnit const& u : units)
         SendUnitLine(player, u);
     GspeAddonComm::Send(player, "UE");
@@ -456,7 +477,7 @@ void UnitMgr::HandleRecruit(Player* player, uint32 candidateId)
     }
 
     std::size_t const unitCount = std::count_if(units.begin(), units.end(),
-        [](GuildUnit const& u) { return u.status != UNIT_STATUS_CANDIDATE; });
+        [this](GuildUnit const& u) { return u.status != UNIT_STATUS_CANDIDATE && !IsTroop(u); });
     if (unitCount >= GspePerks::UnitSlots(sGuildProgressMgr->GetLevel(guildId)))
     {
         GspeAddonComm::SendError(player, "Your guild has no room for another unit.");
@@ -494,7 +515,49 @@ void UnitMgr::HandleDismiss(Player* player, uint32 unitId)
         return;
     }
 
-    DeleteUnit(unitId);
-    std::erase_if(GetUnits(guildId), [unitId](GuildUnit const& u) { return u.id == unitId; });
+    RemoveUnit(guildId, unitId);
+    SendUnits(player);
+}
+
+void UnitMgr::HandleTrainTroop(Player* player, uint16 templateId)
+{
+    if (!CheckRequest(player))
+        return;
+
+    UnitTemplate const* tmpl = GetTemplate(templateId);
+    if (!tmpl || tmpl->kind != UNIT_KIND_TROOP || tmpl->abilities.empty())
+        return;
+
+    uint32 const guildId = player->GetGuildId();
+    std::vector<GuildUnit>& units = GetUnits(guildId);
+    std::size_t const troops = std::count_if(units.begin(), units.end(), [this](GuildUnit const& u) { return IsTroop(u); });
+    if (troops >= GspePerks::TroopSlots(sGuildProgressMgr->GetLevel(guildId)))
+    {
+        GspeAddonComm::SendError(player, "Your guild has no room for more troops.");
+        return;
+    }
+
+    if (!sGuildProgressMgr->SpendSupplies(guildId, sGspeConfig->troopCost))
+    {
+        GspeAddonComm::SendError(player, Acore::StringFormat("Training troops costs {} guild supplies.", sGspeConfig->troopCost));
+        return;
+    }
+
+    uint8 const level = LevelCap(guildId);
+    GuildUnit u;
+    u.id = _nextId++;
+    u.guildId = guildId;
+    u.templateId = tmpl->id;
+    u.name = tmpl->name;
+    u.race = tmpl->races.front();
+    u.quality = UNIT_QUALITY_UNCOMMON;
+    u.level = level;
+    u.itemLevel = ItemLevelForLevel(level);
+    u.abilities[0] = tmpl->abilities.front();
+    u.vitality = TROOP_VITALITY;
+    SaveUnit(u);
+    units.push_back(std::move(u));
+
+    GspeAddonComm::Send(player, "RECRUITED\t0");
     SendUnits(player);
 }

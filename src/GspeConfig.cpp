@@ -64,4 +64,10 @@ void GspeConfig::Load()
     missionGoldMultiplier = std::max(0.0f, sConfigMgr->GetOption<float>("GuildExpansion.Missions.GoldMultiplier", 1.0f));
     missionGuildXpMultiplier = std::max(0.0f, sConfigMgr->GetOption<float>("GuildExpansion.Missions.GuildXpMultiplier", 1.0f));
     missionUnitXpMultiplier = std::max(0.0f, sConfigMgr->GetOption<float>("GuildExpansion.Missions.UnitXpMultiplier", 1.0f));
+    missionEffectChance = std::min<uint32>(100, sConfigMgr->GetOption<uint32>("GuildExpansion.Missions.EffectChance", 25));
+    missionRareChance = std::min<uint32>(100, sConfigMgr->GetOption<uint32>("GuildExpansion.Missions.RareChance", 10));
+    missionSalvageChance = std::min<uint32>(100, sConfigMgr->GetOption<uint32>("GuildExpansion.Missions.SalvageChance", 15));
+    consumableBonus = sConfigMgr->GetOption<uint32>("GuildExpansion.Missions.ConsumableBonus", 10);
+    flaskBonus = sConfigMgr->GetOption<uint32>("GuildExpansion.Missions.FlaskBonus", 20);
+    troopCost = sConfigMgr->GetOption<uint32>("GuildExpansion.Units.TroopCost", 40);
 }

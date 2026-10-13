@@ -687,13 +687,17 @@ void WorkOrderMgr::ResetOrders(Player* player)
     SendOrders(player);
 }
 
-uint32 WorkOrderMgr::RandomMaterial(uint8 level) const
+uint32 WorkOrderMgr::RandomMaterial(uint8 level, uint16 skill) const
 {
     std::vector<uint32> band;
-    for (auto const& [skill, list] : _gatherBySkill)
+    for (auto const& [gatherSkill, list] : _gatherBySkill)
+    {
+        if (skill != ANY_SKILL && gatherSkill != skill)
+            continue;
         for (GatherItem const& g : list)
             if (g.itemLevel + 10 >= level && g.itemLevel <= uint32(level) + 2)
                 band.push_back(g.item);
+    }
     return band.empty() ? 0 : Acore::Containers::SelectRandomContainerElement(band);
 }
 

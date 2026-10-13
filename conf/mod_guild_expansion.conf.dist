@@ -119,6 +119,23 @@ GuildExpansion.Missions.Enable = 1
 # Missions offered on the guild's board at a time; offers last 24 hours.
 GuildExpansion.Missions.BoardSize = 6
 
+# Chance (percent) that an offer has an effect (slowing, lethal, cursed or costly),
+# and that it is a rare mission (double rewards, better gear).
+GuildExpansion.Missions.EffectChance = 25
+GuildExpansion.Missions.RareChance = 10
+
+# Chance (percent) that a successful mission also brings back salvage
+# (gear, crafting materials or extra gold).
+GuildExpansion.Missions.SalvageChance = 15
+
+# Success bonus (percent) for sending a consumable: potions, elixirs, food and
+# bandages / flasks.
+GuildExpansion.Missions.ConsumableBonus = 10
+GuildExpansion.Missions.FlaskBonus = 20
+
+# Guild Supplies cost to train a troop.
+GuildExpansion.Units.TroopCost = 40
+
 # Multipliers for mission supply costs and rewards.
 GuildExpansion.Missions.CostMultiplier = 1.0
 GuildExpansion.Missions.GoldMultiplier = 1.0

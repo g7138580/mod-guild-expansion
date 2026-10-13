@@ -287,16 +287,33 @@ void Dispatch(Player* player, std::string_view request)
         sMissionMgr->SendBoard(player);
     else if (cmd == "MPREVIEW" || cmd == "MSTART")
     {
+        // MSTART <mission> [C<bag>.<slot>] <unit> <unit> ...
         std::vector<uint32> unitIds;
+        MissionConsumable consumable;
         for (std::size_t i = 2; i < args.size() && unitIds.size() < MAX_MISSION_UNITS + 1; ++i)
-            if (uint32 id = ArgAt<uint32>(args, i))
+        {
+            std::string_view const arg = args[i];
+            if (!arg.empty() && arg[0] == 'C')
+            {
+                std::vector<std::string_view> const pos = Acore::Tokenize(arg.substr(1), '.', false);
+                if (pos.size() == 2)
+                {
+                    consumable.set = true;
+                    consumable.bag = Acore::StringTo<uint8>(pos[0]).value_or(0);
+                    consumable.slot = Acore::StringTo<uint8>(pos[1]).value_or(0);
+                }
+            }
+            else if (uint32 id = ArgAt<uint32>(args, i))
                 unitIds.push_back(id);
+        }
 
         if (cmd == "MPREVIEW")
-            sMissionMgr->HandlePreview(player, ArgAt<uint32>(args, 1), unitIds);
+            sMissionMgr->HandlePreview(player, ArgAt<uint32>(args, 1), unitIds, consumable);
         else
-            sMissionMgr->HandleStart(player, ArgAt<uint32>(args, 1), unitIds);
+            sMissionMgr->HandleStart(player, ArgAt<uint32>(args, 1), unitIds, consumable);
     }
+    else if (cmd == "TROOP")
+        sUnitMgr->HandleTrainTroop(player, ArgAt<uint16>(args, 1));
     else if (cmd == "MCOLLECT")
         sMissionMgr->HandleCollect(player, ArgAt<uint32>(args, 1));
 }

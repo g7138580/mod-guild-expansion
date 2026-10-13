@@ -67,6 +67,12 @@ struct GspeConfig
     float missionGoldMultiplier = 1.0f;
     float missionGuildXpMultiplier = 1.0f;
     float missionUnitXpMultiplier = 1.0f;
+    uint32 missionEffectChance = 25;   // percent
+    uint32 missionRareChance = 10;     // percent
+    uint32 missionSalvageChance = 15;  // percent
+    uint32 consumableBonus = 10;
+    uint32 flaskBonus = 20;
+    uint32 troopCost = 40;
 };
 
 #define sGspeConfig GspeConfig::instance()

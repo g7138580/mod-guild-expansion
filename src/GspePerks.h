@@ -67,6 +67,13 @@ inline uint32 UnitSlots(uint8 guildLevel)
     return 3 + (guildLevel >= 9 ? 1 : 0) + (guildLevel >= 13 ? 1 : 0) + (guildLevel >= 18 ? 1 : 0);
 }
 
+// Troops the guild can have: 2, plus one more at guild levels 7, 12, 17 and 22.
+inline uint32 TroopSlots(uint8 guildLevel)
+{
+    return 2 + (guildLevel >= 7 ? 1 : 0) + (guildLevel >= 12 ? 1 : 0) + (guildLevel >= 17 ? 1 : 0)
+             + (guildLevel >= 22 ? 1 : 0);
+}
+
 // Missions the guild can run at once: 1, plus one more at guild levels 5, 12, 17 and 22.
 inline uint32 MissionSlots(uint8 guildLevel)
 {

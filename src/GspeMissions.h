@@ -2,8 +2,9 @@
  * mod-guild-expansion: guild missions.
  *
  * Each guild has one mission board: offers built from templates in the world DB, at a
- * level set by the guild's units. Members send units on an offer; the mission runs on a
- * timer (also while offline) and is collected for rewards and unit XP.
+ * level set by the guild's units. Members send units (and troops) on an offer, optionally
+ * with a consumable; the mission runs on a timer (also while offline) and is collected
+ * for rewards and unit XP. Offers can be rare and can carry an effect.
  */
 
 #ifndef MOD_GSPE_MISSIONS_H_
@@ -15,6 +16,7 @@
 #include <unordered_map>
 #include <vector>
 
+class Item;
 class Player;
 struct GuildUnit;
 
@@ -33,6 +35,16 @@ enum MissionState : uint8
 {
     MISSION_STATE_OFFER   = 0,
     MISSION_STATE_RUNNING = 1,
+};
+
+// Keep in sync with client_addon/GuildExpansion/Missions.lua.
+enum MissionEffect : uint8
+{
+    MISSION_EFFECT_NONE    = 0,
+    MISSION_EFFECT_SLOWING = 1,   // double duration
+    MISSION_EFFECT_LETHAL  = 2,   // troops sent die
+    MISSION_EFFECT_CURSED  = 3,   // no bonus loot
+    MISSION_EFFECT_COSTLY  = 4,   // double supply cost
 };
 
 constexpr uint8 MAX_MISSION_UNITS = 3;
@@ -61,7 +73,7 @@ struct GuildMission
     uint8 state = MISSION_STATE_OFFER;
     uint8 level = 1;
     std::vector<uint8> threats;
-    uint32 duration = 0;    // seconds
+    uint32 duration = 0;    // seconds; for running missions, the actual duration
     uint32 cost = 0;        // supplies
     uint32 gold = 0;        // copper
     uint32 supplies = 0;
@@ -74,7 +86,17 @@ struct GuildMission
     uint32 chance = 0;      // 0-200, set when started
     uint32 ends = 0;
     uint32 expires = 0;
+    uint8 effect = MISSION_EFFECT_NONE;
+    bool rare = false;
     bool notified = false;  // completion alert sent (memory only)
+};
+
+// A consumable sent with a mission, by client bag and slot.
+struct MissionConsumable
+{
+    bool set = false;
+    uint8 bag = 0;
+    uint8 slot = 0;
 };
 
 class MissionMgr
@@ -91,8 +113,8 @@ public:
     // Client requests.
     void SendTemplates(Player* player);
     void SendBoard(Player* player);
-    void HandlePreview(Player* player, uint32 missionId, std::vector<uint32> const& unitIds);
-    void HandleStart(Player* player, uint32 missionId, std::vector<uint32> const& unitIds);
+    void HandlePreview(Player* player, uint32 missionId, std::vector<uint32> const& unitIds, MissionConsumable const& consumable);
+    void HandleStart(Player* player, uint32 missionId, std::vector<uint32> const& unitIds, MissionConsumable const& consumable);
     void HandleCollect(Player* player, uint32 missionId);
 
     // GM helpers.
@@ -105,6 +127,7 @@ private:
     struct Chance
     {
         uint32 value = 0;
+        uint32 duration = 0;
         std::vector<uint8> countered;
         std::vector<uint8> missingRoles;
     };
@@ -116,9 +139,13 @@ private:
     void RefillBoard(uint32 guildId, std::vector<GuildMission>& missions);
     bool GenerateOffer(uint32 guildId, std::vector<GuildMission> const& existing, GuildMission& out);
     void SetRewards(GuildMission& mission, MissionTemplate const& tmpl);
-    [[nodiscard]] Chance ComputeChance(GuildMission const& mission, std::vector<GuildUnit const*> const& units) const;
+    [[nodiscard]] Chance ComputeChance(GuildMission const& mission, std::vector<GuildUnit const*> const& units,
+                                       uint32 consumableBonus) const;
     bool ResolveUnits(Player* player, GuildMission const& mission, std::vector<uint32> const& unitIds,
                       std::vector<GuildUnit*>& out, bool reportErrors);
+    // Success bonus of the consumable (0 if none or unsuitable); *item receives the item.
+    uint32 ConsumableBonus(Player* player, GuildMission const& mission, MissionConsumable const& consumable,
+                           Item** item, bool reportErrors) const;
     uint32 RollGear(Player* player, uint8 level, uint8 quality) const;
     void Save(GuildMission const& mission);
     void Delete(uint32 missionId);

@@ -24,7 +24,7 @@ GE.TRAITS = {
     [5]  = { name = "Herbalist",       icon = "INV_Misc_Flower_02",      desc = "Brings back extra herbs." },
     [6]  = { name = "Prospector",      icon = "INV_Pick_02",             desc = "Brings back extra ore and stone." },
     [7]  = { name = "Skinner",         icon = "INV_Misc_Pelt_Wolf_01",   desc = "Brings back extra leather." },
-    [8]  = { name = "Treasure Hunter", icon = "INV_Box_02",              desc = "Higher chance of gear rewards." },
+    [8]  = { name = "Treasure Hunter", icon = "INV_Box_02",              desc = "25% chance of an extra piece of gear from a successful mission." },
     [9]  = { name = "Field Medic",     icon = "INV_Misc_Bandage_15",     desc = "Troops on missions with this unit don't lose vitality." },
     [10] = { name = "Supply Sergeant", icon = "INV_Crate_01",            desc = "Missions with this unit bring back 25% more supplies." },
 }

@@ -44,13 +44,31 @@ enum UnitQuality : uint8
 // Ability ids 1..UNIT_ABILITY_COUNT; ability N counters mission threat N.
 // Keep in sync with client_addon/GuildExpansion/Defs.lua.
 constexpr uint8 UNIT_ABILITY_COUNT = 10;
+
+// Trait ids. Keep in sync with client_addon/GuildExpansion/Defs.lua.
+enum UnitTrait : uint8
+{
+    TRAIT_QUICK_STUDY     = 1,   // +50% unit XP
+    TRAIT_HARDY           = 2,   // missions 25% shorter
+    TRAIT_SCAVENGER       = 3,   // +25% gold
+    TRAIT_LUCKY           = 4,   // +10% bonus loot chance
+    TRAIT_HERBALIST       = 5,   // extra herbs
+    TRAIT_PROSPECTOR      = 6,   // extra ore and stone
+    TRAIT_SKINNER         = 7,   // extra leather
+    TRAIT_TREASURE_HUNTER = 8,   // chance of extra gear
+    TRAIT_FIELD_MEDIC     = 9,   // troops don't lose vitality
+    TRAIT_SUPPLY_SERGEANT = 10,  // +25% supplies
+};
 constexpr uint8 UNIT_TRAIT_COUNT = 10;
 constexpr uint8 UNIT_MAX_LEVEL = 80;
+constexpr uint8 UNIT_KIND_TROOP = 2;
+// Missions a new troop can go on before it wears out.
+constexpr uint8 TROOP_VITALITY = 2;
 
 struct UnitTemplate
 {
     uint16 id = 0;
-    uint8 kind = 0;                 // 0 hero, 1 specialist
+    uint8 kind = 0;                 // 0 hero, 1 specialist, 2 troop
     std::string name;
     std::vector<uint8> races;
     uint8 classId = 0;
@@ -79,6 +97,7 @@ struct GuildUnit
     uint32 mission = 0;
     uint32 cost = 0;                // candidates only
     uint32 expires = 0;             // candidates only
+    uint8 vitality = 0;             // troops only: missions left
 };
 
 class UnitMgr
@@ -93,7 +112,11 @@ public:
     std::vector<GuildUnit>& GetUnits(uint32 guildId);
     GuildUnit* FindUnit(uint32 guildId, uint32 unitId);
     void SaveUnit(GuildUnit const& unit);
+    // Deletes a unit or troop (dismissed, or a troop that died or wore out).
+    void RemoveUnit(uint32 guildId, uint32 unitId);
     void OnGuildDisband(uint32 guildId);
+
+    [[nodiscard]] bool IsTroop(GuildUnit const& unit) const;
 
     // Highest character level among the guild's members; units can't level past it.
     [[nodiscard]] uint8 LevelCap(uint32 guildId);
@@ -108,6 +131,7 @@ public:
     void SendUnits(Player* player);
     void HandleRecruit(Player* player, uint32 candidateId);
     void HandleDismiss(Player* player, uint32 unitId);
+    void HandleTrainTroop(Player* player, uint16 templateId);
 
     // GM: replace the guild's recruit candidates now.
     void RerollCandidates(uint32 guildId);

@@ -62,8 +62,10 @@ public:
     // GM: drop all of a character's orders and generate new ones.
     void ResetOrders(Player* player);
 
-    // A random gathered material (any profession) suited to the level; 0 if none.
-    [[nodiscard]] uint32 RandomMaterial(uint8 level) const;
+    // A random gathered material suited to the level, from one gathering skill or from any
+    // (skill = ANY_SKILL); 0 if none.
+    static constexpr uint16 ANY_SKILL = 0xFFFF;
+    [[nodiscard]] uint32 RandomMaterial(uint8 level, uint16 skill = ANY_SKILL) const;
 
 private:
     WorkOrderMgr() = default;

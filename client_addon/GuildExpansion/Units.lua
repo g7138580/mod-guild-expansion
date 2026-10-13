@@ -1,7 +1,7 @@
 --[[
   Guild Expansion: Units page (Legion followers style).
-  Left: the roster and recruit candidates. Right: details of the selected unit, with
-  Dismiss for units and Recruit for candidates.
+  Left: the roster, troops (and troop training), and recruit candidates. Right: details of
+  the selected entry, with Dismiss, Train or Recruit.
 ]]
 
 local GE = GuildExpansion
@@ -9,9 +9,9 @@ local UI = GE.UI
 
 local LEFT_WIDTH = 300
 local ROW_HEIGHT = 60
-local MAX_ROWS = 12     -- up to 6 units + 6 candidates
+local MAX_ROWS = 24
 
-local selectedId
+local selectedId        -- unit id, or "train:<template>" for a troop type
 local thePage
 
 StaticPopupDialogs["GUILDEXPANSION_DISMISS_UNIT"] = {
@@ -26,13 +26,25 @@ StaticPopupDialogs["GUILDEXPANSION_DISMISS_UNIT"] = {
     hideOnEscape = true,
 }
 
+-- Troop types that can be trained, as list entries.
+local function TrainEntries()
+    local list = {}
+    for id, tmpl in pairs(GE.unitTemplates) do
+        if tmpl.kind == 2 then
+            list[#list + 1] = { train = true, id = "train:" .. id, template = id, quality = 2, level = GE.unitInfo.cap,
+                                itemLevel = 0, abilities = {}, traits = {}, name = tmpl.name }
+        end
+    end
+    table.sort(list, function(a, b) return a.template < b.template end)
+    return list
+end
+
 local function AllEntries()
     local list = {}
-    for _, u in ipairs(GE.units) do
-        list[#list + 1] = u
-    end
-    for _, u in ipairs(GE.candidates) do
-        list[#list + 1] = u
+    for _, group in ipairs({ GE.units, GE.troops, TrainEntries(), GE.candidates }) do
+        for _, u in ipairs(group) do
+            list[#list + 1] = u
+        end
     end
     return list
 end
@@ -60,10 +72,8 @@ local function IconPath(u)
     return "Interface\\Icons\\" .. (ut and ut.icon or "INV_Misc_QuestionMark")
 end
 
-local function SectionHeader(parent, text)
-    local fs = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    fs:SetText(text)
-    return fs
+local function MissionsLeft(u)
+    return string.format("%d mission%s left", u.vitality, u.vitality == 1 and "" or "s")
 end
 
 -- Left list ------------------------------------------------------------------
@@ -75,8 +85,8 @@ local function BuildList(page)
     left:SetPoint("BOTTOMLEFT", 0, 0)
     left:SetWidth(LEFT_WIDTH)
 
-    ui.count = left:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    ui.count:SetPoint("TOPLEFT", 12, -12)
+    ui.count = left:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    ui.count:SetPoint("TOPLEFT", 12, -14)
 
     ui.scroll = CreateFrame("ScrollFrame", "GuildExpansionUnitScroll", left, "UIPanelScrollFrameTemplate")
     ui.scroll.scrollBarHideable = true
@@ -87,8 +97,10 @@ local function BuildList(page)
     ui.content:SetHeight(1)
     ui.scroll:SetScrollChild(ui.content)
 
-    ui.unitsHeader = SectionHeader(ui.content, "Units")
-    ui.recruitsHeader = SectionHeader(ui.content, "Recruits")
+    ui.headers = {}
+    for _, key in ipairs({ "units", "troops", "recruits" }) do
+        ui.headers[key] = ui.content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    end
 
     ui.rows = {}
     for i = 1, MAX_ROWS do
@@ -147,12 +159,16 @@ local function BuildList(page)
     ui.recruitTimer:SetPoint("BOTTOMLEFT", 12, 14)
 end
 
-local function FillRow(r, u, isCandidate)
+local function FillRow(r, u)
+    local isCandidate = u.status == 2
+    local isTrain = u.train
+    local isTroop = not isTrain and GE.IsTroop(u)
+
     r.unitId = u.id
     r.icon:SetTexture(IconPath(u))
     r.icon:SetDesaturated(isCandidate)
     r.border:SetVertexColor(GE.QualityRGB(u.quality))
-    r.level:SetText(u.level)
+    r.level:SetText((isTrain or isTroop) and "" or u.level)
     local ut = GE.unitTemplates[u.template]
     if ut then
         GE.SetRoleIcon(r.role, ut.role)
@@ -160,24 +176,32 @@ local function FillRow(r, u, isCandidate)
         r.role:Hide()
     end
 
-    if isCandidate then
+    local m = u.status == 1 and MissionOfUnit(u.id)
+    if isTrain then
+        r.name:SetText("Train " .. u.name)
+        r.info:SetText(string.format("|cffffd200%d supplies|r", GE.unitInfo.troopCost))
+        r.bar:Hide()
+    elseif isCandidate then
         r.name:SetText("|cff9d9d9d" .. u.name .. "|r")
         r.info:SetText(string.format("|cffffd200Recruit: %d supplies|r", u.cost))
         r.bar:Hide()
+    elseif m then
+        r.name:SetText(isTroop and u.name or ("|cff" .. GE.QualityHex(u.quality) .. u.name .. "|r"))
+        local remaining = math.max(0, m.endsAt - GetTime())
+        r.info:SetText(remaining > 0 and ("|cffffd200On Mission - " .. UI.FormatDuration(remaining) .. "|r")
+            or "|cff80ff80Mission complete|r")
+        r.bar:SetStatusBarColor(0.3, 0.6, 1)
+        r.bar:SetValue(1 - remaining / math.max(1, m.duration))
+        r.bar:Show()
+    elseif isTroop then
+        r.name:SetText(u.name)
+        r.info:SetText(MissionsLeft(u))
+        r.bar:Hide()
     else
         r.name:SetText("|cff" .. GE.QualityHex(u.quality) .. u.name .. "|r")
-        local m = u.status == 1 and MissionOfUnit(u.id)
-        if m then
-            local remaining = math.max(0, m.endsAt - GetTime())
-            r.info:SetText(remaining > 0 and ("|cffffd200On Mission - " .. UI.FormatDuration(remaining) .. "|r")
-                or "|cff80ff80Mission complete|r")
-            r.bar:SetStatusBarColor(0.3, 0.6, 1)
-            r.bar:SetValue(1 - remaining / math.max(1, m.duration))
-        else
-            r.info:SetText("iLvl " .. u.itemLevel)
-            r.bar:SetStatusBarColor(0.58, 0.0, 0.55)
-            r.bar:SetValue(math.min(1, u.xp / math.max(1, u.xpNext)))
-        end
+        r.info:SetText("iLvl " .. u.itemLevel)
+        r.bar:SetStatusBarColor(0.58, 0.0, 0.55)
+        r.bar:SetValue(math.min(1, u.xp / math.max(1, u.xpNext)))
         r.bar:Show()
     end
 
@@ -192,37 +216,43 @@ end
 local function RefreshList(page)
     local ui = page.ui
     local info = GE.unitInfo
-    ui.count:SetText(string.format("Units: |cffffffff%d / %d|r", info.count, info.max))
+    ui.count:SetText(string.format("Units: |cffffffff%d / %d|r     Troops: |cffffffff%d / %d|r",
+        info.count, info.max, info.troops, info.maxTroops))
 
-    local y = 0
-    local index = 0
-    local function place(fs)
+    local y, index = 0, 0
+    local function place(key, text)
+        local fs = ui.headers[key]
         fs:ClearAllPoints()
         fs:SetPoint("TOPLEFT", 4, -y)
+        fs:SetText(text)
         fs:Show()
         y = y + 20
     end
-    local function addRows(list, isCandidate)
+    local function addRows(list)
         for _, u in ipairs(list) do
             index = index + 1
             local r = ui.rows[index]
             if r then
                 r:ClearAllPoints()
                 r:SetPoint("TOPLEFT", 0, -y)
-                FillRow(r, u, isCandidate)
+                FillRow(r, u)
                 y = y + ROW_HEIGHT
             end
         end
     end
 
-    place(ui.unitsHeader)
-    addRows(GE.units, false)
+    place("units", "Units")
+    addRows(GE.units)
+    y = y + 6
+    place("troops", "Troops")
+    addRows(GE.troops)
+    addRows(TrainEntries())
     y = y + 6
     if #GE.candidates > 0 then
-        place(ui.recruitsHeader)
-        addRows(GE.candidates, true)
+        place("recruits", "Recruits")
+        addRows(GE.candidates)
     else
-        ui.recruitsHeader:Hide()
+        ui.headers.recruits:Hide()
     end
     for i = index + 1, #ui.rows do
         ui.rows[i]:Hide()
@@ -292,6 +322,7 @@ local function BuildDetail(page)
     ui.dItemLevel:SetPoint("TOP", ui.dPortrait, "BOTTOM", 0, -16)
     ui.dStatus = right:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     ui.dStatus:SetPoint("TOP", ui.dItemLevel, "BOTTOM", 0, -6)
+    ui.dStatus:SetWidth(240)
 
     -- Role, abilities and traits.
     local colX = 280
@@ -336,6 +367,8 @@ local function BuildDetail(page)
     end
     ui.dNoTraits = right:CreateFontString(nil, "OVERLAY", "GameFontDisable")
     ui.dNoTraits:SetPoint("TOPLEFT", ui.dTraitHeader, "BOTTOMLEFT", 0, -10)
+    ui.dNoTraits:SetWidth(300)
+    ui.dNoTraits:SetJustifyH("LEFT")
 
     -- Equipment (giving gear to units comes in a later update).
     ui.dEquipHeader = right:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -356,6 +389,22 @@ local function BuildDetail(page)
 
     ui.dEmpty = right:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     ui.dEmpty:SetPoint("CENTER")
+end
+
+local function SetAbilityRow(b, id)
+    local a = GE.ABILITIES[id or 0]
+    if a then
+        b.icon:SetTexture("Interface\\Icons\\" .. a.icon)
+        b.name:SetText(a.name)
+        b.sub:SetText("Counters: " .. a.threat)
+        b.tooltip = function()
+            GameTooltip:AddLine(a.name)
+            GameTooltip:AddLine("Counters the " .. a.threat .. " threat on missions.", 1, 1, 1, true)
+        end
+        b:Show(); b.name:Show(); b.sub:Show()
+    else
+        b:Hide(); b.name:Hide(); b.sub:Hide()
+    end
 end
 
 local function RefreshDetail(page)
@@ -382,36 +431,90 @@ local function RefreshDetail(page)
     end
     ui.dEmpty:SetText("")
 
+    local isTrain = u.train
+    local isTroop = isTrain or GE.IsTroop(u)
     local isCandidate = u.status == 2
     local ut = GE.unitTemplates[u.template]
     local path = IconPath(u)
+    local supplies = GE.state and GE.state.supplies or 0
 
     ui.dIcon:SetTexture(path)
     ui.dIconBorder:SetVertexColor(GE.QualityRGB(u.quality))
-    ui.dLevel:SetText(u.level)
-    ui.dName:SetText("|cff" .. GE.QualityHex(u.quality) .. u.name .. "|r")
-    ui.dDesc:SetText(string.format("Level %d %s  -  %s", u.level, GE.UnitDescription(u), GE.QUALITY_NAMES[u.quality] or ""))
-
-    if isCandidate then
-        ui.dXpText:SetText("")
-        ui.dXpLabel:SetText("")
-        ui.dXp:Hide()
-    elseif u.level >= GE.unitInfo.cap then
-        ui.dXpText:SetText("Level cap")
-        ui.dXpLabel:SetText("Levels with your highest character")
-        ui.dXp:SetValue(1)
-    else
-        ui.dXpText:SetText(GE.FormatNumber(math.max(0, u.xpNext - u.xp)) .. " XP")
-        ui.dXpLabel:SetText("to next level")
-        ui.dXp:SetValue(math.min(1, u.xp / math.max(1, u.xpNext)))
-    end
-
     ui.dPortrait:SetTexture(path)
     ui.dPortrait:SetDesaturated(isCandidate)
     ui.dPortraitBorder:SetVertexColor(GE.QualityRGB(u.quality))
-    ui.dItemLevel:SetText("Item Level " .. u.itemLevel)
+    if ut then
+        GE.SetRoleIcon(ui.dRoleIcon, ut.role)
+        ui.dRole:SetText(GE.ROLES[ut.role] and GE.ROLES[ut.role].name or "")
+    end
+
+    if isTroop then
+        ui.dLevel:SetText("")
+        ui.dName:SetText(u.name)
+        ui.dDesc:SetText("Troop  -  " .. (ut and GE.ROLES[ut.role] and GE.ROLES[ut.role].name or ""))
+        ui.dXpText:SetText("")
+        ui.dXpLabel:SetText("")
+        ui.dXp:Hide()
+        ui.dItemLevel:SetText(isTrain and "Troop" or MissionsLeft(u))
+        ui.dEquipHeader:Hide()
+        ui.dEquip:Hide()
+        -- A troop type shows the ability its troops will have.
+        SetAbilityRow(ui.dAbilities[1], isTrain and ut and ut.abilities and ut.abilities[1] or u.abilities[1])
+        SetAbilityRow(ui.dAbilities[2], nil)
+        for _, b in ipairs(ui.dTraits) do b:Hide(); b.name:Hide(); b.sub:Hide() end
+        ui.dTraitHeader:Hide()
+        ui.dNoTraits:SetText("Troops fill a mission slot, count for their role and counter one threat. "
+            .. "They wear out after a few missions and die on lethal missions.")
+        ui.dNoTraits:ClearAllPoints()
+        ui.dNoTraits:SetPoint("TOPLEFT", ui.dAbilityHeader, "BOTTOMLEFT", 0, -60)
+    else
+        ui.dTraitHeader:Show()
+        ui.dNoTraits:ClearAllPoints()
+        ui.dNoTraits:SetPoint("TOPLEFT", ui.dTraitHeader, "BOTTOMLEFT", 0, -10)
+        ui.dLevel:SetText(u.level)
+        ui.dName:SetText("|cff" .. GE.QualityHex(u.quality) .. u.name .. "|r")
+        ui.dDesc:SetText(string.format("Level %d %s  -  %s", u.level, GE.UnitDescription(u), GE.QUALITY_NAMES[u.quality] or ""))
+        if isCandidate then
+            ui.dXpText:SetText("")
+            ui.dXpLabel:SetText("")
+            ui.dXp:Hide()
+        elseif u.level >= GE.unitInfo.cap then
+            ui.dXpText:SetText("Level cap")
+            ui.dXpLabel:SetText("Levels with your highest character")
+            ui.dXp:SetValue(1)
+        else
+            ui.dXpText:SetText(GE.FormatNumber(math.max(0, u.xpNext - u.xp)) .. " XP")
+            ui.dXpLabel:SetText("to next level")
+            ui.dXp:SetValue(math.min(1, u.xp / math.max(1, u.xpNext)))
+        end
+        ui.dItemLevel:SetText("Item Level " .. u.itemLevel)
+        for i, b in ipairs(ui.dAbilities) do
+            SetAbilityRow(b, u.abilities[i])
+        end
+        local anyTrait = false
+        for i, b in ipairs(ui.dTraits) do
+            local t = GE.TRAITS[u.traits[i] or 0]
+            if t then
+                anyTrait = true
+                b.icon:SetTexture("Interface\\Icons\\" .. t.icon)
+                b.name:SetText(t.name)
+                b.sub:SetText(t.desc)
+                b.tooltip = function()
+                    GameTooltip:AddLine(t.name)
+                    GameTooltip:AddLine(t.desc, 1, 1, 1, true)
+                end
+                b:Show(); b.name:Show(); b.sub:Show()
+            else
+                b:Hide(); b.name:Hide(); b.sub:Hide()
+            end
+        end
+        ui.dNoTraits:SetText(anyTrait and "" or "No traits. Rare and epic units have traits.")
+    end
+
     local m = u.status == 1 and MissionOfUnit(u.id)
-    if m then
+    if isTrain then
+        ui.dStatus:SetText("Trains instantly. Each troop lasts 2 missions.")
+    elseif m then
         local remaining = math.max(0, m.endsAt - GetTime())
         ui.dStatus:SetText(remaining > 0 and ("|cffffd200On a mission - " .. UI.FormatDuration(remaining) .. " left|r")
             or "|cff80ff80Mission complete - collect it on the Missions tab|r")
@@ -421,48 +524,19 @@ local function RefreshDetail(page)
         ui.dStatus:SetText("|cff80ff80Ready for a mission|r")
     end
 
-    if ut then
-        GE.SetRoleIcon(ui.dRoleIcon, ut.role)
-        ui.dRole:SetText(GE.ROLES[ut.role] and GE.ROLES[ut.role].name or "")
-    end
-
-    for i, b in ipairs(ui.dAbilities) do
-        local a = GE.ABILITIES[u.abilities[i] or 0]
-        if a then
-            b.icon:SetTexture("Interface\\Icons\\" .. a.icon)
-            b.name:SetText(a.name)
-            b.sub:SetText("Counters: " .. a.threat)
-            b.tooltip = function()
-                GameTooltip:AddLine(a.name)
-                GameTooltip:AddLine("Counters the " .. a.threat .. " threat on missions.", 1, 1, 1, true)
-            end
-            b:Show(); b.name:Show(); b.sub:Show()
+    if isTrain then
+        local info = GE.unitInfo
+        local full = info.troops >= info.maxTroops
+        ui.dAction:SetText("Train")
+        ui.dAction:SetScript("OnClick", function() GE.Send("TROOP " .. u.template) end)
+        ui.dActionNote:SetText(full and "|cffff4040No room for more troops.|r"
+            or string.format("Cost: %s%d supplies|r", supplies >= info.troopCost and "|cffffd200" or "|cffff4040", info.troopCost))
+        if not full and supplies >= info.troopCost then
+            ui.dAction:Enable()
         else
-            b:Hide(); b.name:Hide(); b.sub:Hide()
+            ui.dAction:Disable()
         end
-    end
-
-    local anyTrait = false
-    for i, b in ipairs(ui.dTraits) do
-        local t = GE.TRAITS[u.traits[i] or 0]
-        if t then
-            anyTrait = true
-            b.icon:SetTexture("Interface\\Icons\\" .. t.icon)
-            b.name:SetText(t.name)
-            b.sub:SetText(t.desc)
-            b.tooltip = function()
-                GameTooltip:AddLine(t.name)
-                GameTooltip:AddLine(t.desc, 1, 1, 1, true)
-            end
-            b:Show(); b.name:Show(); b.sub:Show()
-        else
-            b:Hide(); b.name:Hide(); b.sub:Hide()
-        end
-    end
-    ui.dNoTraits:SetText(anyTrait and "" or "No traits. Rare and epic units have traits.")
-
-    if isCandidate then
-        local supplies = GE.state and GE.state.supplies or 0
+    elseif isCandidate then
         local full = GE.unitInfo.count >= GE.unitInfo.max
         ui.dAction:SetText("Recruit")
         ui.dAction:SetScript("OnClick", function() GE.Send("RECRUIT " .. u.id) end)
@@ -520,12 +594,5 @@ local function Refresh(page)
     RefreshList(page)
     RefreshDetail(page)
 end
-
-GE.RegisterListener(function(event)
-    -- After recruiting, select the new unit.
-    if event == "units" and thePage and selectedId and not FindEntry(selectedId) then
-        selectedId = nil
-    end
-end)
 
 UI.RegisterPage("units", "Units", "Guild Units", Build, Refresh)

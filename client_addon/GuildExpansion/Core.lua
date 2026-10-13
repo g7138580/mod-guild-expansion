@@ -22,7 +22,8 @@ GE.ordersStatus = 0     -- 0 ok, 1 no guild, 2 disabled
 GE.unitTemplates = {}   -- id -> { kind, role, class, icon, name }
 GE.units = {}           -- the guild's units
 GE.candidates = {}      -- recruit candidates
-GE.unitInfo = { count = 0, max = 0, cap = 0, expiresAt = 0, status = 0 }
+GE.troops = {}          -- the guild's troops
+GE.unitInfo = { count = 0, max = 0, cap = 0, expiresAt = 0, status = 0, troops = 0, maxTroops = 0, troopCost = 0 }
 GE.missionTemplates = {} -- id -> { type, slots, roles = {...}, name, desc }
 GE.offers = {}          -- missions on the board
 GE.running = {}         -- missions in progress
@@ -191,7 +192,8 @@ local function ParseUnit(f)
         traits = { tonumber(f[14]) or 0, tonumber(f[15]) or 0 },
         status = tonumber(f[16]) or 0,
         cost = tonumber(f[17]) or 0,
-        name = f[18] or "",
+        vitality = tonumber(f[18]) or 0,
+        name = f[19] or "",
     }
 end
 
@@ -233,6 +235,8 @@ local function ParseMission(f)
         units = NumberList(f[19]),
         endsAt = now + (tonumber(f[20]) or 0),
         expiresAt = now + (tonumber(f[21]) or 0),
+        effect = tonumber(f[22]) or 0,
+        rare = f[23] == "1",
     }
 end
 
@@ -242,6 +246,12 @@ function GE.RequestMissions()
         GE.Send("MTPL")
     end
     GE.Send("MISSIONS")
+end
+
+-- Troops are units whose template is kind 2.
+function GE.IsTroop(unit)
+    local tmpl = GE.unitTemplates[unit.template]
+    return tmpl ~= nil and tmpl.kind == 2
 end
 
 -- Asks for unit data; unit templates are fetched once per session.
@@ -293,6 +303,7 @@ local function OnLine(line)
             class = tonumber(fields[6]) or 0,
             icon = fields[7] or "INV_Misc_QuestionMark",
             name = fields[8] or "",
+            abilities = NumberList(fields[9]),
         }
     elseif cmd == "UTE" then
         Fire("units")
@@ -304,16 +315,21 @@ local function OnLine(line)
             cap = tonumber(fields[5]) or 0,
             expiresAt = GetTime() + (tonumber(fields[7]) or 0),
             status = tonumber(fields[8]) or 0,
+            troops = tonumber(fields[9]) or 0,
+            maxTroops = tonumber(fields[10]) or 0,
+            troopCost = tonumber(fields[11]) or 0,
         }
     elseif cmd == "U" then
         if pendingUnits then
             pendingUnits[#pendingUnits + 1] = ParseUnit(fields)
         end
     elseif cmd == "UE" then
-        GE.units, GE.candidates = {}, {}
+        GE.units, GE.candidates, GE.troops = {}, {}, {}
         for _, unit in ipairs(pendingUnits or {}) do
             if unit.status == 2 then
                 GE.candidates[#GE.candidates + 1] = unit
+            elseif GE.IsTroop(unit) then
+                GE.troops[#GE.troops + 1] = unit
             else
                 GE.units[#GE.units + 1] = unit
             end
@@ -363,6 +379,8 @@ local function OnLine(line)
             value = tonumber(fields[4]) or 0,
             countered = NumberSet(fields[5]),
             missing = NumberSet(fields[6]),
+            duration = tonumber(fields[7]),
+            consumableBonus = tonumber(fields[8]) or 0,
         }
         Fire("chance")
     elseif cmd == "MSTARTED" then
@@ -381,6 +399,13 @@ local function OnLine(line)
             itemCount = tonumber(fields[12]) or 0,
             gear = tonumber(fields[13]) or 0,
             levelUps = tonumber(fields[14]) or 0,
+            extraItem = tonumber(fields[15]) or 0,
+            extraCount = tonumber(fields[16]) or 0,
+            treasure = tonumber(fields[17]) or 0,
+            salvageItem = tonumber(fields[18]) or 0,
+            salvageCount = tonumber(fields[19]) or 0,
+            salvageGold = tonumber(fields[20]) or 0,
+            troopsLost = tonumber(fields[21]) or 0,
         }
         PlaySoundFile(GE.lastResult.success and "Sound\\Interface\\iQuestComplete.wav" or "Sound\\Interface\\iQuestFailed.wav")
         Fire("result")
