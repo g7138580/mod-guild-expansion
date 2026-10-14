@@ -50,6 +50,9 @@ local function RowName(row)
         return s and s.name or "Service", 1
     end
     local name, _, quality = GetItemInfo(row.item)
+    if not name then
+        GE.CacheItem(row.item)
+    end
     return name, quality or 1
 end
 

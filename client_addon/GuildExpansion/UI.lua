@@ -188,6 +188,24 @@ function GE.ItemIcon(itemId)
     return icon or "Interface\\Icons\\INV_Misc_QuestionMark"
 end
 
+-- Asks the server about an item the client hasn't cached (GetItemIcon works from the
+-- client's own data, so a known icon doesn't mean the name is cached). Retried every few
+-- seconds while the name is missing.
+local itemRequests = {}
+function GE.CacheItem(itemId)
+    if not itemId or itemId == 0 or GetItemInfo(itemId) then
+        return
+    end
+    local now = GetTime()
+    if itemRequests[itemId] and now - itemRequests[itemId] < 5 then
+        return
+    end
+    itemRequests[itemId] = now
+    cacheTooltip:SetOwner(UIParent, "ANCHOR_NONE")
+    cacheTooltip:SetHyperlink("item:" .. itemId)
+    cacheTooltip:Hide()
+end
+
 -- Pages ------------------------------------------------------------------
 
 function UI.RegisterPage(name, label, windowTitle, build, refresh)
