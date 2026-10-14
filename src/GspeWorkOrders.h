@@ -32,7 +32,7 @@ struct WorkOrder
     uint8 kind = WORK_ORDER_CRAFT;
     uint16 skill = 0;       // 0 = anyone (cloth)
     uint32 spell = 0;       // recipe, craft orders only
-    uint32 item = 0;
+    uint32 item = 0;        // 0 = placeholder for an abandoned order; a new one arrives at `expires`
     uint16 quantity = 0;
     uint8 level = 1;
     uint32 gold = 0;        // copper

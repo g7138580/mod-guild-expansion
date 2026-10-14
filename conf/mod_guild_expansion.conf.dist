@@ -81,6 +81,9 @@ GuildExpansion.WorkOrders.Count = 3
 # Hours before an unfinished order expires and is replaced.
 GuildExpansion.WorkOrders.DurationHours = 24
 
+# Hours before an abandoned order is replaced by a new one (0 = right away).
+GuildExpansion.WorkOrders.AbandonDelayHours = 4
+
 # Gold paid (in copper) = PerLevelSquared * level^2 + ValueMultiplier * vendor value of the materials.
 GuildExpansion.WorkOrders.Gold.PerLevelSquared = 25
 GuildExpansion.WorkOrders.Gold.ValueMultiplier = 3.0

@@ -44,6 +44,7 @@ void GspeConfig::Load()
     workOrdersEnable = sConfigMgr->GetOption<bool>("GuildExpansion.WorkOrders.Enable", true);
     workOrderCount = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("GuildExpansion.WorkOrders.Count", 3), 1, 6);
     workOrderDurationHours = std::max<uint32>(1, sConfigMgr->GetOption<uint32>("GuildExpansion.WorkOrders.DurationHours", 24));
+    workOrderAbandonDelayHours = sConfigMgr->GetOption<uint32>("GuildExpansion.WorkOrders.AbandonDelayHours", 4);
     workOrderGoldPerLevelSquared = std::max(0.0f, sConfigMgr->GetOption<float>("GuildExpansion.WorkOrders.Gold.PerLevelSquared", 25.0f));
     workOrderGoldValueMultiplier = std::max(0.0f, sConfigMgr->GetOption<float>("GuildExpansion.WorkOrders.Gold.ValueMultiplier", 3.0f));
     workOrderGuildXpPerLevel = sConfigMgr->GetOption<uint32>("GuildExpansion.WorkOrders.GuildXpPerLevel", 100);

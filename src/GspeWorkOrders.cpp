@@ -183,13 +183,13 @@ bool WorkOrderMgr::CheckRequest(Player* player)
 {
     if (!sGspeConfig->enable || !sGspeConfig->workOrdersEnable)
     {
-        GspeAddonComm::Send(player, "WOB\t0\t2");
+        GspeAddonComm::Send(player, "WOB\t0\t2\t0");
         GspeAddonComm::Send(player, "WOE");
         return false;
     }
     if (!player->GetGuildId())
     {
-        GspeAddonComm::Send(player, "WOB\t0\t1");
+        GspeAddonComm::Send(player, "WOB\t0\t1\t0");
         GspeAddonComm::Send(player, "WOE");
         return false;
     }
@@ -230,7 +230,7 @@ WorkOrderMgr::CharacterOrders* WorkOrderMgr::GetOrders(Player* player)
 
 WorkOrder* WorkOrderMgr::FindOrder(CharacterOrders& co, uint32 orderId)
 {
-    auto itr = std::find_if(co.orders.begin(), co.orders.end(), [orderId](WorkOrder const& o) { return o.id == orderId; });
+    auto itr = std::find_if(co.orders.begin(), co.orders.end(), [orderId](WorkOrder const& o) { return o.id == orderId && o.item; });
     return itr != co.orders.end() ? &*itr : nullptr;
 }
 
@@ -256,7 +256,7 @@ void WorkOrderMgr::Refill(Player* player, CharacterOrders& co)
     uint32 const now = uint32(time(nullptr));
     std::vector<uint32> expired;
     for (WorkOrder const& o : co.orders)
-        if (o.expires <= now || !sObjectMgr->GetItemTemplate(o.item))
+        if (o.expires <= now || (o.item && !sObjectMgr->GetItemTemplate(o.item)))
             expired.push_back(o.id);
     for (uint32 id : expired)
         Remove(co, id);
@@ -490,7 +490,8 @@ void WorkOrderMgr::SendOrders(Player* player)
     CharacterOrders* co = GetOrders(player);
     Refill(player, *co);
 
-    GspeAddonComm::Send(player, Acore::StringFormat("WOB\t{}\t0", co->orders.size()));
+    GspeAddonComm::Send(player, Acore::StringFormat("WOB\t{}\t0\t{}", co->orders.size(),
+        sGspeConfig->workOrderAbandonDelayHours));
     for (WorkOrder const& o : co->orders)
         SendOrderLine(player, o, ValidatePlacements(player, o, co->placements[o.id]));
     GspeAddonComm::Send(player, "WOE");
@@ -651,8 +652,20 @@ void WorkOrderMgr::HandleAbandon(Player* player, uint32 orderId)
         return;
 
     CharacterOrders* co = GetOrders(player);
-    if (FindOrder(*co, orderId))
-        Remove(*co, orderId);
+    WorkOrder* order = FindOrder(*co, orderId);
+    if (!order)
+    {
+        SendOrders(player);
+        return;
+    }
+
+    // The slot stays empty until the delay passes; Refill then puts a new order in it.
+    co->placements.erase(orderId);
+    uint32 const readyAt = uint32(time(nullptr)) + sGspeConfig->workOrderAbandonDelayHours * HOUR;
+    *order = WorkOrder{ .id = orderId, .expires = readyAt };
+    CharacterDatabase.Execute(
+        "UPDATE mod_gspe_work_order SET kind = 0, skill = 0, spell = 0, item = 0, quantity = 0, gold = 0, supplies = 0, "
+        "guild_xp = 0, expires = {} WHERE id = {}", readyAt, orderId);
     SendOrders(player);
 }
 

@@ -45,6 +45,7 @@ struct GspeConfig
     bool workOrdersEnable = true;
     uint32 workOrderCount = 3;
     uint32 workOrderDurationHours = 24;
+    uint32 workOrderAbandonDelayHours = 4;
     float workOrderGoldPerLevelSquared = 25.0f;
     float workOrderGoldValueMultiplier = 3.0f;
     uint32 workOrderGuildXpPerLevel = 100;

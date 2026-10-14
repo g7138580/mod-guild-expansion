@@ -288,6 +288,7 @@ local function OnLine(line)
     elseif cmd == "WOB" then
         pendingOrders = {}
         GE.ordersStatus = tonumber(fields[4]) or 0
+        GE.abandonDelayHours = tonumber(fields[5]) or 0
     elseif cmd == "WO" then
         if pendingOrders then
             pendingOrders[#pendingOrders + 1] = ParseOrder(fields)

@@ -86,7 +86,7 @@ if ContainerFrameItemButton_OnModifiedClick then
 end
 
 StaticPopupDialogs["GUILDEXPANSION_ABANDON_ORDER"] = {
-    text = "Abandon this work order? A new one will replace it.",
+    text = "Abandon this work order? A new one will arrive %s.",
     button1 = YES,
     button2 = NO,
     OnAccept = function(self, orderId)
@@ -161,11 +161,33 @@ end
 
 local function RefreshList(page)
     local ui = page.ui
-    ui.count:SetText(string.format("Work Orders: |cffffffff%d|r", #GE.orders))
+    local open = 0
+    for _, o in ipairs(GE.orders) do
+        if o.item > 0 then
+            open = open + 1
+        end
+    end
+    ui.count:SetText(string.format("Work Orders: |cffffffff%d|r", open))
 
     for i, r in ipairs(ui.rows) do
         local o = GE.orders[i]
-        if o then
+        if o and o.item == 0 then
+            -- An abandoned order's slot, waiting for a new order.
+            r.orderId = o.id
+            r.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+            r.icon:SetDesaturated(true)
+            r.border:SetVertexColor(0.5, 0.5, 0.5)
+            r.name:SetText("|cff808080New order arriving|r")
+            r.sub:SetText("in " .. UI.FormatDuration(o.expiresAt - GetTime()))
+            r.progress:SetText("")
+            if o.id == selectedId then
+                r.selected:Show()
+            else
+                r.selected:Hide()
+            end
+            r:Show()
+        elseif o then
+            r.icon:SetDesaturated(false)
             r.orderId = o.id
             r.icon:SetTexture(GE.ItemIcon(o.item))
             r.border:SetVertexColor(GE.QualityRGB(o.quality))
@@ -320,7 +342,9 @@ local function BuildDetail(page)
     ui.abandon:SetScript("OnClick", function()
         local o = SelectedOrder()
         if o then
-            local dialog = StaticPopup_Show("GUILDEXPANSION_ABANDON_ORDER")
+            local hours = GE.abandonDelayHours or 0
+            local dialog = StaticPopup_Show("GUILDEXPANSION_ABANDON_ORDER",
+                hours > 0 and string.format("in %d hour%s", hours, hours == 1 and "" or "s") or "right away")
             if dialog then
                 dialog.data = o.id
             end
@@ -337,6 +361,11 @@ local function RefreshDetail(page)
     if not o then
         ui.detail:Hide()
         ui.dEmpty:SetText(#GE.orders > 0 and "Select a work order." or "")
+        return
+    end
+    if o.item == 0 then
+        ui.detail:Hide()
+        ui.dEmpty:SetText("A new work order arrives in " .. UI.FormatDuration(o.expiresAt - GetTime()) .. ".")
         return
     end
     ui.detail:Show()
@@ -404,6 +433,12 @@ local function Build(page)
         elapsedSince = elapsedSince + elapsed
         if elapsedSince >= 30 then
             elapsedSince = 0
+            for _, o in ipairs(GE.orders) do
+                if o.item == 0 and o.expiresAt <= GetTime() then
+                    GE.Send("WO")
+                    break
+                end
+            end
             page.refresh(page)
         end
     end)
@@ -411,7 +446,14 @@ end
 
 local function Refresh(page)
     if not SelectedOrder() then
-        selectedId = GE.orders[1] and GE.orders[1].id or nil
+        selectedId = nil
+        for _, o in ipairs(GE.orders) do
+            if o.item > 0 then
+                selectedId = o.id
+                break
+            end
+        end
+        selectedId = selectedId or (GE.orders[1] and GE.orders[1].id)
     end
     RefreshList(page)
     RefreshDetail(page)
