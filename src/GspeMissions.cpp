@@ -5,6 +5,7 @@
 #include "GspeMissions.h"
 #include "GspeAddonComm.h"
 #include "GspeConfig.h"
+#include "GspeItems.h"
 #include "GspePerks.h"
 #include "GspeProgress.h"
 #include "GspeUnits.h"
@@ -17,7 +18,6 @@
 #include "GuildMgr.h"
 #include "Item.h"
 #include "Log.h"
-#include "Mail.h"
 #include "ObjectMgr.h"
 #include "Player.h"
 #include "Random.h"
@@ -84,52 +84,6 @@ TypeRewards RewardsFor(uint8 type)
         case MISSION_RAID:      return { 2.0f, 20, 2.0f, 1.5f, false, 4 };
         default:                return { 1.0f, 5,  1.0f, 1.0f, false, 0 };   // patrol
     }
-}
-
-// Gives the item, mailing whatever doesn't fit in the bags.
-void GiveItem(Player* player, uint32 itemId, uint32 count)
-{
-    ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
-    if (!proto || !count)
-        return;
-
-    uint32 const stack = std::max<uint32>(1, proto->GetMaxStackSize());
-    while (count)
-    {
-        uint32 const n = std::min(count, stack);
-        count -= n;
-
-        int32 const randomProperty = Item::GenerateItemRandomPropertyId(itemId);
-        ItemPosCountVec dest;
-        if (player->CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, itemId, n) == EQUIP_ERR_OK)
-        {
-            if (Item* item = player->StoreNewItem(dest, itemId, true, randomProperty))
-                player->SendNewItem(item, n, true, false);
-            continue;
-        }
-
-        if (Item* item = Item::CreateItem(itemId, n, player, false, randomProperty))
-        {
-            CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
-            item->SaveToDB(trans);
-            MailDraft("Guild mission rewards", "Your bags were full, so the guild sent these along.")
-                .AddItem(item)
-                .SendMailTo(trans, MailReceiver(player), MailSender(MAIL_NORMAL, player->GetGUID().GetCounter(), MAIL_STATIONERY_GM));
-            CharacterDatabase.CommitTransaction(trans);
-            ChatHandler(player->GetSession()).SendSysMessage("Your bags are full; mission rewards were sent by mail.");
-        }
-    }
-}
-
-uint32 BestArmorSubclass(Player* player)
-{
-    if (player->HasSkill(SKILL_PLATE_MAIL))
-        return ITEM_SUBCLASS_ARMOR_PLATE;
-    if (player->HasSkill(SKILL_MAIL))
-        return ITEM_SUBCLASS_ARMOR_MAIL;
-    if (player->HasSkill(SKILL_LEATHER))
-        return ITEM_SUBCLASS_ARMOR_LEATHER;
-    return ITEM_SUBCLASS_ARMOR_CLOTH;
 }
 
 bool HasTrait(GuildUnit const& u, uint8 trait)
@@ -793,7 +747,7 @@ void MissionMgr::HandleStart(Player* player, uint32 missionId, std::vector<uint3
 
 uint32 MissionMgr::RollGear(Player* player, uint8 level, uint8 quality) const
 {
-    uint32 const best = BestArmorSubclass(player);
+    uint32 const best = GspeItems::BestArmorSubclass(player);
     uint32 const minLevel = level > 6 ? level - 6 : 1;
 
     for (uint8 q = quality; q >= 2; --q)
@@ -915,15 +869,15 @@ void MissionMgr::HandleCollect(Player* player, uint32 missionId)
         if (guildXp)
             sGuildProgressMgr->AddGuildXP(guildId, guildXp, player);
         if (item && itemCount)
-            GiveItem(player, item, itemCount);
+            GspeItems::GiveItem(player, item, itemCount, "Guild mission rewards");
         if (gear)
-            GiveItem(player, gear, 1);
+            GspeItems::GiveItem(player, gear, 1, "Guild mission rewards");
         if (extraItem && extraCount)
-            GiveItem(player, extraItem, extraCount);
+            GspeItems::GiveItem(player, extraItem, extraCount, "Guild mission rewards");
         if (treasure)
-            GiveItem(player, treasure, 1);
+            GspeItems::GiveItem(player, treasure, 1, "Guild mission rewards");
         if (salvageItem && salvageCount)
-            GiveItem(player, salvageItem, salvageCount);
+            GspeItems::GiveItem(player, salvageItem, salvageCount, "Guild mission rewards");
     }
     else
     {

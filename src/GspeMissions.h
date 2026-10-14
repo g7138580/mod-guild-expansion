@@ -138,6 +138,9 @@ public:
     void RerollBoard(uint32 guildId);
     void FinishRunning(uint32 guildId);
 
+    // A gear piece of the quality (or lower, if none) for the character, up to the level; 0 if none.
+    uint32 RollGear(Player* player, uint8 level, uint8 quality) const;
+
 private:
     MissionMgr() = default;
 
@@ -164,7 +167,6 @@ private:
     // Kind of the consumable (CONSUMABLE_NONE if none or unsuitable); *item receives the item.
     uint8 ConsumableKind(Player* player, GuildMission const& mission, MissionConsumable const& consumable,
                          Item** item, bool reportErrors) const;
-    uint32 RollGear(Player* player, uint8 level, uint8 quality) const;
     void Save(GuildMission const& mission);
     void Delete(uint32 missionId);
     void SendMissionLine(Player* player, GuildMission const& mission);
