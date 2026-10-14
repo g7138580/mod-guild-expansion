@@ -314,6 +314,12 @@ void Dispatch(Player* player, std::string_view request)
     }
     else if (cmd == "TROOP")
         sUnitMgr->HandleTrainTroop(player, ArgAt<uint16>(args, 1));
+    else if (cmd == "EQUIP" && args.size() >= 5)
+    {
+        // EQUIP <unit> <W|A|E> <bag> <slot>
+        uint8 const gearSlot = args[2] == "W" ? UNIT_GEAR_WEAPON : args[2] == "A" ? UNIT_GEAR_ARMOR : UNIT_GEAR_EFFECT;
+        sUnitMgr->HandleEquip(player, ArgAt<uint32>(args, 1), gearSlot, ArgAt<uint8>(args, 3), ArgAt<uint8>(args, 4));
+    }
     else if (cmd == "MCOLLECT")
         sMissionMgr->HandleCollect(player, ArgAt<uint32>(args, 1));
 }

@@ -13,6 +13,23 @@ local MAX_ROWS = 24
 
 local selectedId        -- unit id, or "train:<template>" for a troop type
 local thePage
+local lastPickup        -- bag and slot of the last item picked up from the bags
+
+hooksecurefunc("PickupContainerItem", function(bag, slot)
+    lastPickup = { bag = bag, slot = slot }
+end)
+
+StaticPopupDialogs["GUILDEXPANSION_GIVE_GEAR"] = {
+    text = "Give %s to %s? The item is used up.",
+    button1 = YES,
+    button2 = NO,
+    OnAccept = function(self, data)
+        GE.Send(string.format("EQUIP %d %s %d %d", data.unit, data.key, data.bag, data.slot))
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+}
 
 StaticPopupDialogs["GUILDEXPANSION_DISMISS_UNIT"] = {
     text = "Dismiss %s from the guild? This can't be undone.",
@@ -370,16 +387,53 @@ local function BuildDetail(page)
     ui.dNoTraits:SetWidth(300)
     ui.dNoTraits:SetJustifyH("LEFT")
 
-    -- Equipment (giving gear to units comes in a later update).
-    ui.dEquipHeader = right:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    ui.dEquipHeader:SetPoint("BOTTOMLEFT", 24, 70)
+    -- Equipment: drag gear from the bags onto a slot. The item is used up.
+    ui.dEquip = CreateFrame("Frame", nil, right)
+    ui.dEquip:SetWidth(220)
+    ui.dEquip:SetHeight(90)
+    ui.dEquip:SetPoint("BOTTOMLEFT", 20, 14)
+    ui.dEquipHeader = ui.dEquip:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    ui.dEquipHeader:SetPoint("TOPLEFT", 4, 0)
     ui.dEquipHeader:SetText("Equipment")
-    ui.dEquip = UI.IconButton(right, 40)
-    ui.dEquip:SetPoint("TOPLEFT", ui.dEquipHeader, "BOTTOMLEFT", 0, -6)
-    ui.dEquip.icon:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-LOCK")
-    ui.dEquip.tooltip = function()
-        GameTooltip:AddLine("Equipment")
-        GameTooltip:AddLine("Giving gear to units to raise their item level is coming in a later update.", 1, 1, 1, true)
+
+    local function GiveFromCursor(slotButton)
+        local kind, itemId, link = GetCursorInfo()
+        if kind ~= "item" then
+            return
+        end
+        local u = selectedId and FindEntry(selectedId)
+        local fromBags = lastPickup and GetContainerItemLink(lastPickup.bag, lastPickup.slot)
+        ClearCursor()
+        if not u or u.train or u.status == 2 or GE.IsTroop(u) then
+            return
+        end
+        if not fromBags or tonumber(fromBags:match("item:(%d+)")) ~= itemId then
+            UIErrorsFrame:AddMessage("Drag the item from your bags.", 1.0, 0.1, 0.1, 1.0)
+            return
+        end
+        local dialog = StaticPopup_Show("GUILDEXPANSION_GIVE_GEAR", link or "this item", u.name)
+        if dialog then
+            dialog.data = { unit = u.id, key = slotButton.key, bag = lastPickup.bag, slot = lastPickup.slot }
+        end
+    end
+
+    ui.dGear = {}
+    for i, def in ipairs({ { key = "W", label = "Weapon" }, { key = "A", label = "Armor" }, { key = "E", label = "Effect" } }) do
+        local b = UI.IconButton(ui.dEquip, 40)
+        b:SetPoint("TOPLEFT", ui.dEquipHeader, "BOTTOMLEFT", 4 + (i - 1) * 66, -8)
+        b.bg = b:CreateTexture(nil, "BACKGROUND")
+        b.bg:SetTexture("Interface\\Buttons\\UI-EmptySlot")
+        b.bg:SetWidth(66)
+        b.bg:SetHeight(66)
+        b.bg:SetPoint("CENTER")
+        b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
+        b.label = ui.dEquip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        b.label:SetPoint("TOP", b, "BOTTOM", 0, -3)
+        b.label:SetText(def.label)
+        b.key = def.key
+        b:SetScript("OnReceiveDrag", GiveFromCursor)
+        b:SetScript("OnClick", GiveFromCursor)
+        ui.dGear[i] = b
     end
 
     ui.dAction = UI.Button(right, "Dismiss", 160, 28)
@@ -478,6 +532,10 @@ local function RefreshDetail(page)
             ui.dXpText:SetText("")
             ui.dXpLabel:SetText("")
             ui.dXp:Hide()
+        elseif u.level >= GE.unitInfo.cap and u.quality < 4 and u.promoNext > 0 then
+            ui.dXpText:SetText(string.format("|cffa335ee%s / %s XP|r", GE.FormatNumber(u.promoXp), GE.FormatNumber(u.promoNext)))
+            ui.dXpLabel:SetText("to promotion (" .. GE.QUALITY_NAMES[u.quality + 1] .. ")")
+            ui.dXp:SetValue(math.min(1, u.promoXp / math.max(1, u.promoNext)))
         elseif u.level >= GE.unitInfo.cap then
             ui.dXpText:SetText("Level cap")
             ui.dXpLabel:SetText("Levels with your highest character")
@@ -488,6 +546,56 @@ local function RefreshDetail(page)
             ui.dXp:SetValue(math.min(1, u.xp / math.max(1, u.xpNext)))
         end
         ui.dItemLevel:SetText("Item Level " .. u.itemLevel)
+        if isCandidate then
+            ui.dEquip:Hide()
+        else
+            ui.dEquip:Show()
+            local armorName = ut and GE.ARMOR_NAMES[ut.armor] or "matching"
+            local roleWeapons = ut and ({ [0] = "a one-handed weapon or shield", [1] = "a staff, mace or wand", [2] = "any weapon" })[ut.role] or "a weapon"
+            local gear = {
+                { item = u.weaponItem, ilvl = u.weaponIlvl, empty = "Weapon: drag " .. roleWeapons .. " here." },
+                { item = u.armorItem, ilvl = u.armorIlvl, empty = "Armor: drag a " .. string.lower(armorName) .. " armor piece here." },
+                { item = u.effectItem, effect = GE.UNIT_EFFECTS[u.effectKind],
+                  empty = "Effect: drag a trinket, ring, necklace, or a crafted bag or gadget here." },
+            }
+            for i, b in ipairs(ui.dGear) do
+                local g = gear[i]
+                if g.item > 0 then
+                    b.icon:SetTexture(GE.ItemIcon(g.item))
+                    b.icon:Show()
+                    local _, _, quality = GetItemInfo(g.item)
+                    UI.SetBorderQuality(b, quality or 2)
+                else
+                    b.icon:Hide()
+                    b.border:Hide()
+                end
+                b.tooltip = function()
+                    if g.item > 0 then
+                        GameTooltip:SetHyperlink("item:" .. g.item)
+                        if g.effect then
+                            GameTooltip:AddLine(g.effect.name .. ": " .. g.effect.desc, 0, 1, 0, true)
+                        else
+                            GameTooltip:AddLine("Counts as item level " .. g.ilvl .. " for this unit.", 0, 1, 0, true)
+                        end
+                        GameTooltip:AddLine("Drag another item here to replace it.", 0.8, 0.8, 0.8, true)
+                    else
+                        GameTooltip:AddLine(g.empty, 1, 1, 1, true)
+                        if i < 3 then
+                            GameTooltip:AddLine("Enchants add 5 item levels, each gem 3. The item is used up.", 0.8, 0.8, 0.8, true)
+                        else
+                            for k = 1, 7 do
+                                local e = GE.UNIT_EFFECTS[k]
+                                GameTooltip:AddLine("|cffffd200" .. e.name .. ":|r " .. e.desc, 1, 1, 1, true)
+                            end
+                        end
+                    end
+                end
+            end
+            if u.weaponIlvl > 0 or u.armorIlvl > 0 then
+                ui.dItemLevel:SetText(string.format("Item Level %d  |cffaaaaaa(weapon %s, armor %s)|r", u.itemLevel,
+                    u.weaponIlvl > 0 and u.weaponIlvl or "-", u.armorIlvl > 0 and u.armorIlvl or "-"))
+            end
+        end
         for i, b in ipairs(ui.dAbilities) do
             SetAbilityRow(b, u.abilities[i])
         end

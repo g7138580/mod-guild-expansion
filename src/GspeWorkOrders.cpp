@@ -65,28 +65,6 @@ bool IsJunkItemName(std::string const& name)
     return false;
 }
 
-// Client bag ids: 0 = backpack (slots 1-16), 1-4 = equipped bags. Returns false if out of range.
-bool ClientSlotToServer(uint8 clientBag, uint8 clientSlot, uint8& bag, uint8& slot)
-{
-    if (clientSlot < 1)
-        return false;
-
-    if (clientBag == 0)
-    {
-        if (clientSlot > INVENTORY_SLOT_ITEM_END - INVENTORY_SLOT_ITEM_START)
-            return false;
-        bag = INVENTORY_SLOT_BAG_0;
-        slot = INVENTORY_SLOT_ITEM_START + clientSlot - 1;
-        return true;
-    }
-
-    if (clientBag > INVENTORY_SLOT_BAG_END - INVENTORY_SLOT_BAG_START)
-        return false;
-    bag = INVENTORY_SLOT_BAG_START + clientBag - 1;
-    slot = clientSlot - 1;
-    return true;
-}
-
 template <typename T, typename WeightFn>
 T const* PickWeighted(std::vector<T const*> const& items, WeightFn weight)
 {
@@ -118,6 +96,7 @@ void WorkOrderMgr::BuildCatalog()
 {
     _recipesBySkill.clear();
     _gatherBySkill.clear();
+    _craftedBy.clear();
 
     std::unordered_set<uint32> seenSpells;
     uint32 recipeCount = 0;
@@ -162,6 +141,7 @@ void WorkOrderMgr::BuildCatalog()
             recipe.grayAt = sla->TrivialSkillLineRankHigh;
             recipe.reagentValue = reagentValue;
             _recipesBySkill[skill].push_back(recipe);
+            _craftedBy.emplace(item->ItemId, skill);
             ++recipeCount;
             break;
         }
@@ -531,7 +511,7 @@ void WorkOrderMgr::HandlePlace(Player* player, uint32 orderId, uint8 clientBag, 
     }
 
     uint8 bag = 0, slot = 0;
-    Item* item = ClientSlotToServer(clientBag, clientSlot, bag, slot) ? player->GetItemByPos(bag, slot) : nullptr;
+    Item* item = GspeAddonComm::ClientSlotToServer(clientBag, clientSlot, bag, slot) ? player->GetItemByPos(bag, slot) : nullptr;
     if (!item || item->IsInTrade())
     {
         GspeAddonComm::SendError(player, "Item not found in your bags.");
@@ -685,6 +665,12 @@ void WorkOrderMgr::ResetOrders(Player* player)
     for (uint32 id : ids)
         Remove(*co, id);
     SendOrders(player);
+}
+
+uint16 WorkOrderMgr::CraftedBy(uint32 item) const
+{
+    auto itr = _craftedBy.find(item);
+    return itr != _craftedBy.end() ? itr->second : 0;
 }
 
 uint32 WorkOrderMgr::RandomMaterial(uint8 level, uint16 skill) const

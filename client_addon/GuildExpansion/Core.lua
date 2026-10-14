@@ -193,7 +193,15 @@ local function ParseUnit(f)
         status = tonumber(f[16]) or 0,
         cost = tonumber(f[17]) or 0,
         vitality = tonumber(f[18]) or 0,
-        name = f[19] or "",
+        weaponItem = tonumber(f[19]) or 0,
+        weaponIlvl = tonumber(f[20]) or 0,
+        armorItem = tonumber(f[21]) or 0,
+        armorIlvl = tonumber(f[22]) or 0,
+        effectItem = tonumber(f[23]) or 0,
+        effectKind = tonumber(f[24]) or 0,
+        promoXp = tonumber(f[25]) or 0,
+        promoNext = tonumber(f[26]) or 0,
+        name = f[27] or "",
     }
 end
 
@@ -304,6 +312,7 @@ local function OnLine(line)
             icon = fields[7] or "INV_Misc_QuestionMark",
             name = fields[8] or "",
             abilities = NumberList(fields[9]),
+            armor = tonumber(fields[10]) or 0,
         }
     elseif cmd == "UTE" then
         Fire("units")
@@ -338,6 +347,8 @@ local function OnLine(line)
         Fire("units")
     elseif cmd == "RECRUITED" then
         PlaySoundFile("Sound\\Interface\\iQuestComplete.wav")
+    elseif cmd == "EQUIPPED" then
+        PlaySound("igCharacterInfoTab")
     elseif cmd == "MT" then
         local id = tonumber(fields[3]) or 0
         local tmpl = GE.missionTemplates[id] or {}
@@ -381,6 +392,7 @@ local function OnLine(line)
             missing = NumberSet(fields[6]),
             duration = tonumber(fields[7]),
             consumableBonus = tonumber(fields[8]) or 0,
+            consumableKind = tonumber(fields[9]) or 0,
         }
         Fire("chance")
     elseif cmd == "MSTARTED" then
@@ -406,6 +418,7 @@ local function OnLine(line)
             salvageCount = tonumber(fields[19]) or 0,
             salvageGold = tonumber(fields[20]) or 0,
             troopsLost = tonumber(fields[21]) or 0,
+            promotions = tonumber(fields[22]) or 0,
         }
         PlaySoundFile(GE.lastResult.success and "Sound\\Interface\\iQuestComplete.wav" or "Sound\\Interface\\iQuestFailed.wav")
         Fire("result")

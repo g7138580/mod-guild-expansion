@@ -65,6 +65,37 @@ constexpr uint8 UNIT_KIND_TROOP = 2;
 // Missions a new troop can go on before it wears out.
 constexpr uint8 TROOP_VITALITY = 2;
 
+// Gear can raise a unit's item level at most this far above normal for its level.
+constexpr uint16 UNIT_GEAR_ILVL_ALLOWANCE = 20;
+
+// Effect of the item in a unit's effect slot, by the profession that made it.
+// Keep in sync with client_addon/GuildExpansion/Defs.lua.
+enum UnitEffect : uint8
+{
+    UNIT_EFFECT_NONE           = 0,
+    UNIT_EFFECT_ENGINEERING    = 1,   // counters Siege Engines
+    UNIT_EFFECT_JEWELCRAFTING  = 2,   // +5% success
+    UNIT_EFFECT_ALCHEMY        = 3,   // missions 15% shorter
+    UNIT_EFFECT_INSCRIPTION    = 4,   // +10% success on delves and raids
+    UNIT_EFFECT_TAILORING      = 5,   // +25% crafting materials
+    UNIT_EFFECT_LEATHERWORKING = 6,   // troops survive lethal missions
+    UNIT_EFFECT_ACCESSORY      = 7,   // any other trinket, ring or necklace: +3% success
+};
+
+// Which slot an item is given to.
+enum UnitGearSlot : uint8
+{
+    UNIT_GEAR_WEAPON = 0,
+    UNIT_GEAR_ARMOR  = 1,
+    UNIT_GEAR_EFFECT = 2,
+};
+
+struct UnitXpResult
+{
+    uint32 levels = 0;
+    uint32 promotions = 0;
+};
+
 struct UnitTemplate
 {
     uint16 id = 0;
@@ -73,6 +104,7 @@ struct UnitTemplate
     std::vector<uint8> races;
     uint8 classId = 0;
     uint8 role = UNIT_ROLE_DAMAGE;
+    uint8 armor = 0;                // armor subclass it can wear: 1 cloth .. 4 plate, 0 none
     std::vector<uint8> abilities;
     std::vector<uint8> traits;      // empty = any
     std::string icon;
@@ -98,6 +130,13 @@ struct GuildUnit
     uint32 cost = 0;                // candidates only
     uint32 expires = 0;             // candidates only
     uint8 vitality = 0;             // troops only: missions left
+    uint32 weaponItem = 0;
+    uint16 weaponIlvl = 0;
+    uint32 armorItem = 0;
+    uint16 armorIlvl = 0;
+    uint32 effectItem = 0;
+    uint8 effectKind = UNIT_EFFECT_NONE;
+    uint32 promoXp = 0;             // XP earned at the level cap toward the next quality
 };
 
 class UnitMgr
@@ -120,8 +159,12 @@ public:
 
     // Highest character level among the guild's members; units can't level past it.
     [[nodiscard]] uint8 LevelCap(uint32 guildId);
-    // Adds XP, levelling the unit up to the cap. Returns the number of levels gained.
-    uint32 AddXp(GuildUnit& unit, uint32 xp, uint8 cap);
+    // Adds XP, levelling the unit up to the cap; XP past the cap counts toward promotions.
+    UnitXpResult AddXp(GuildUnit& unit, uint32 xp, uint8 cap);
+    // XP needed at the level cap for the next quality, 0 at epic.
+    [[nodiscard]] static uint32 PromotionXp(GuildUnit const& unit);
+    // Item level from the unit's level and gear.
+    static void RecalcItemLevel(GuildUnit& unit);
 
     [[nodiscard]] static uint32 XpForNextLevel(uint8 level);
     [[nodiscard]] static uint16 ItemLevelForLevel(uint8 level);
@@ -132,6 +175,7 @@ public:
     void HandleRecruit(Player* player, uint32 candidateId);
     void HandleDismiss(Player* player, uint32 unitId);
     void HandleTrainTroop(Player* player, uint16 templateId);
+    void HandleEquip(Player* player, uint32 unitId, uint8 gearSlot, uint8 clientBag, uint8 clientSlot);
 
     // GM: replace the guild's recruit candidates now.
     void RerollCandidates(uint32 guildId);
@@ -150,6 +194,8 @@ private:
     std::string PickName(uint8 race, uint8 gender, std::vector<GuildUnit> const& existing) const;
     void DeleteUnit(uint32 unitId);
     void SendUnitLine(Player* player, GuildUnit const& unit);
+    void Promote(GuildUnit& unit);
+    [[nodiscard]] uint8 EffectKindFor(struct ItemTemplate const* proto) const;
 
     std::vector<UnitTemplate> _templates;
     std::unordered_map<uint16, std::size_t> _templateIndex;

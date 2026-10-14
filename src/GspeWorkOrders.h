@@ -67,6 +67,9 @@ public:
     static constexpr uint16 ANY_SKILL = 0xFFFF;
     [[nodiscard]] uint32 RandomMaterial(uint8 level, uint16 skill = ANY_SKILL) const;
 
+    // The profession whose recipes create this item, or 0.
+    [[nodiscard]] uint16 CraftedBy(uint32 item) const;
+
 private:
     WorkOrderMgr() = default;
 
@@ -118,6 +121,7 @@ private:
 
     std::unordered_map<uint16, std::vector<CraftRecipe>> _recipesBySkill;
     std::unordered_map<uint16, std::vector<GatherItem>> _gatherBySkill;
+    std::unordered_map<uint32, uint16> _craftedBy;
     std::unordered_map<ObjectGuid::LowType, CharacterOrders> _characters;
     uint32 _nextId = 1;
 };

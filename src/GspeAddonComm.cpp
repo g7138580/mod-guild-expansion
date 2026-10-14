@@ -17,6 +17,25 @@
 
 namespace GspeAddonComm
 {
+bool ClientSlotToServer(uint8 clientBag, uint8 clientSlot, uint8& bag, uint8& slot)
+{
+    if (clientSlot < 1)
+        return false;
+    if (clientBag == 0)
+    {
+        if (clientSlot > INVENTORY_SLOT_ITEM_END - INVENTORY_SLOT_ITEM_START)
+            return false;
+        bag = INVENTORY_SLOT_BAG_0;
+        slot = INVENTORY_SLOT_ITEM_START + clientSlot - 1;
+        return true;
+    }
+    if (clientBag > INVENTORY_SLOT_BAG_END - INVENTORY_SLOT_BAG_START)
+        return false;
+    bag = INVENTORY_SLOT_BAG_START + clientBag - 1;
+    slot = clientSlot - 1;
+    return true;
+}
+
 std::string Sanitize(std::string_view in, std::size_t maxLen)
 {
     std::string out;

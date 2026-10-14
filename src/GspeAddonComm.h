@@ -31,6 +31,10 @@ void SendError(Player* player, std::string_view text);
 // Pushes STATE to every online member of the guild.
 void BroadcastState(uint32 guildId);
 
+// Client bag ids are 0 (backpack, slots 1-16) and 1-4 (equipped bags, slots from 1).
+// Converts them to the server's bag and slot; false if out of range.
+[[nodiscard]] bool ClientSlotToServer(uint8 clientBag, uint8 clientSlot, uint8& bag, uint8& slot);
+
 // Replaces tabs, pipes and line breaks, drops non-ASCII and truncates.
 [[nodiscard]] std::string Sanitize(std::string_view in, std::size_t maxLen);
 } // namespace GspeAddonComm

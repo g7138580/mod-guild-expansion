@@ -47,6 +47,22 @@ enum MissionEffect : uint8
     MISSION_EFFECT_COSTLY  = 4,   // double supply cost
 };
 
+// Kinds of consumable that can be sent with a mission, each with its own effect.
+// Keep in sync with client_addon/GuildExpansion/Defs.lua.
+enum MissionConsumableKind : uint8
+{
+    CONSUMABLE_NONE        = 0,
+    CONSUMABLE_POTION      = 1,   // +10%
+    CONSUMABLE_FLASK       = 2,   // +20%
+    CONSUMABLE_ELIXIR      = 3,   // +10%, units gain 25% more XP
+    CONSUMABLE_FOOD        = 4,   // +10%, units gain 25% more XP
+    CONSUMABLE_BANDAGE     = 5,   // +5%, troops don't lose a use
+    CONSUMABLE_ENHANCEMENT = 6,   // +10%, +10 item level for every unit
+    CONSUMABLE_SCROLL      = 7,   // +10% on delves and raids, +5% elsewhere
+    CONSUMABLE_EXPLOSIVE   = 8,   // counters Siege Engines and Minion Swarm, +5%
+    CONSUMABLE_POISON      = 9,   // +10%, +10% bonus loot chance
+};
+
 constexpr uint8 MAX_MISSION_UNITS = 3;
 
 struct MissionTemplate
@@ -88,6 +104,7 @@ struct GuildMission
     uint32 expires = 0;
     uint8 effect = MISSION_EFFECT_NONE;
     bool rare = false;
+    uint8 consumable = CONSUMABLE_NONE;   // running missions
     bool notified = false;  // completion alert sent (memory only)
 };
 
@@ -128,6 +145,7 @@ private:
     {
         uint32 value = 0;
         uint32 duration = 0;
+        uint32 consumableBonus = 0;
         std::vector<uint8> countered;
         std::vector<uint8> missingRoles;
     };
@@ -140,12 +158,12 @@ private:
     bool GenerateOffer(uint32 guildId, std::vector<GuildMission> const& existing, GuildMission& out);
     void SetRewards(GuildMission& mission, MissionTemplate const& tmpl);
     [[nodiscard]] Chance ComputeChance(GuildMission const& mission, std::vector<GuildUnit const*> const& units,
-                                       uint32 consumableBonus) const;
+                                       uint8 consumableKind) const;
     bool ResolveUnits(Player* player, GuildMission const& mission, std::vector<uint32> const& unitIds,
                       std::vector<GuildUnit*>& out, bool reportErrors);
-    // Success bonus of the consumable (0 if none or unsuitable); *item receives the item.
-    uint32 ConsumableBonus(Player* player, GuildMission const& mission, MissionConsumable const& consumable,
-                           Item** item, bool reportErrors) const;
+    // Kind of the consumable (CONSUMABLE_NONE if none or unsuitable); *item receives the item.
+    uint8 ConsumableKind(Player* player, GuildMission const& mission, MissionConsumable const& consumable,
+                         Item** item, bool reportErrors) const;
     uint32 RollGear(Player* player, uint8 level, uint8 quality) const;
     void Save(GuildMission const& mission);
     void Delete(uint32 missionId);

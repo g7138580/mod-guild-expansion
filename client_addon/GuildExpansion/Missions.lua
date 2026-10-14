@@ -809,7 +809,12 @@ local function BuildMission(page)
             GameTooltip:AddLine("Used up when the mission starts. Right-click to remove.", 0, 1, 0, true)
         else
             GameTooltip:AddLine("Consumable")
-            GameTooltip:AddLine("Drag a potion, elixir, food, bandage or flask near the mission's level here for extra success chance. It is used up when the mission starts.", 1, 1, 1, true)
+            GameTooltip:AddLine("Drag a consumable near the mission's level here. Each kind does something different:", 1, 1, 1, true)
+            for i = 1, 9 do
+                local c = GE.CONSUMABLES[i]
+                GameTooltip:AddLine("|cffffd200" .. c.name .. ":|r " .. c.desc, 1, 1, 1, true)
+            end
+            GameTooltip:AddLine("It is used up when the mission starts.", 0.8, 0.8, 0.8, true)
         end
     end
     ui.mRewards = {}
@@ -859,8 +864,8 @@ local function RefreshMission(page)
     if consumable then
         ui.mCons.icon:SetTexture(GE.ItemIcon(consumable.item))
         ui.mCons.icon:Show()
-        local bonus = chance and chance.consumableBonus or 0
-        ui.mConsText:SetText(bonus > 0 and string.format("|cff80ff80+%d%% success|r", bonus)
+        local kind = chance and GE.CONSUMABLES[chance.consumableKind or 0]
+        ui.mConsText:SetText(kind and ("|cff80ff80" .. kind.name .. ":|r " .. kind.desc)
             or "|cffff4040Not usable for this mission|r")
     else
         ui.mCons.icon:Hide()
@@ -1035,6 +1040,9 @@ local function RefreshResult(page)
     end
     if res.troopsLost > 0 then
         lines[#lines + 1] = string.format("|cffff4040%d troop%s lost.|r", res.troopsLost, res.troopsLost == 1 and "" or "s")
+    end
+    if res.promotions > 0 then
+        lines[#lines + 1] = string.format("|cffa335ee%d unit%s promoted!|r", res.promotions, res.promotions == 1 and " was" or "s were")
     end
     lines[#lines + 1] = "|cffcc88ffEach unit gained " .. GE.FormatNumber(res.unitXp) .. " XP|r"
         .. (res.levelUps > 0 and string.format("  |cff80ff80(%d level%s gained)|r", res.levelUps, res.levelUps == 1 and "" or "s") or "")

@@ -9,6 +9,8 @@
 #include "GspeProgress.h"
 
 #include "Containers.h"
+#include "GspeWorkOrders.h"
+#include "Item.h"
 #include "DatabaseEnv.h"
 #include "Log.h"
 #include "Player.h"
@@ -55,7 +57,7 @@ void UnitMgr::LoadTemplates()
     _names.clear();
 
     if (QueryResult r = WorldDatabase.Query(
-            "SELECT id, kind, name, races, class, role, abilities, traits, icon, weight FROM mod_gspe_unit_template"))
+            "SELECT id, kind, name, races, class, role, abilities, traits, icon, weight, armor FROM mod_gspe_unit_template"))
     {
         do
         {
@@ -71,6 +73,7 @@ void UnitMgr::LoadTemplates()
             t.traits = ParseIdList(f[7].Get<std::string>());
             t.icon = f[8].Get<std::string>();
             t.weight = f[9].Get<uint16>();
+            t.armor = f[10].Get<uint8>();
 
             std::erase_if(t.abilities, [](uint8 a) { return a < 1 || a > UNIT_ABILITY_COUNT; });
             std::erase_if(t.traits, [](uint8 a) { return a < 1 || a > UNIT_TRAIT_COUNT; });
@@ -128,7 +131,8 @@ std::vector<GuildUnit>& UnitMgr::GetUnits(uint32 guildId)
     std::vector<GuildUnit>& units = _guilds[guildId];
     if (QueryResult r = CharacterDatabase.Query(
             "SELECT id, template, name, race, gender, quality, level, xp, item_level, ability1, ability2, "
-            "trait1, trait2, status, mission, cost, expires, vitality FROM mod_gspe_unit WHERE guildid = {} ORDER BY id", guildId))
+            "trait1, trait2, status, mission, cost, expires, vitality, weapon_item, weapon_ilvl, armor_item, armor_ilvl, "
+            "effect_item, effect_kind, promo_xp FROM mod_gspe_unit WHERE guildid = {} ORDER BY id", guildId))
     {
         do
         {
@@ -153,6 +157,13 @@ std::vector<GuildUnit>& UnitMgr::GetUnits(uint32 guildId)
             u.cost = f[15].Get<uint32>();
             u.expires = f[16].Get<uint32>();
             u.vitality = f[17].Get<uint8>();
+            u.weaponItem = f[18].Get<uint32>();
+            u.weaponIlvl = f[19].Get<uint16>();
+            u.armorItem = f[20].Get<uint32>();
+            u.armorIlvl = f[21].Get<uint16>();
+            u.effectItem = f[22].Get<uint32>();
+            u.effectKind = f[23].Get<uint8>();
+            u.promoXp = f[24].Get<uint32>();
             units.push_back(std::move(u));
         } while (r->NextRow());
     }
@@ -172,10 +183,12 @@ void UnitMgr::SaveUnit(GuildUnit const& u)
     CharacterDatabase.EscapeString(name);
     CharacterDatabase.Execute(
         "REPLACE INTO mod_gspe_unit (id, guildid, template, name, race, gender, quality, level, xp, item_level, "
-        "ability1, ability2, trait1, trait2, status, mission, cost, expires, vitality) "
-        "VALUES ({}, {}, {}, '{}', {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
+        "ability1, ability2, trait1, trait2, status, mission, cost, expires, vitality, weapon_item, weapon_ilvl, "
+        "armor_item, armor_ilvl, effect_item, effect_kind, promo_xp) "
+        "VALUES ({}, {}, {}, '{}', {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {})",
         u.id, u.guildId, u.templateId, name, u.race, u.gender, u.quality, u.level, u.xp, u.itemLevel,
-        u.abilities[0], u.abilities[1], u.traits[0], u.traits[1], u.status, u.mission, u.cost, u.expires, u.vitality);
+        u.abilities[0], u.abilities[1], u.traits[0], u.traits[1], u.status, u.mission, u.cost, u.expires, u.vitality,
+        u.weaponItem, u.weaponIlvl, u.armorItem, u.armorIlvl, u.effectItem, u.effectKind, u.promoXp);
 }
 
 void UnitMgr::DeleteUnit(uint32 unitId)
@@ -210,22 +223,89 @@ uint8 UnitMgr::LevelCap(uint32 guildId)
     return std::clamp<uint8>(cap, 1, UNIT_MAX_LEVEL);
 }
 
-uint32 UnitMgr::AddXp(GuildUnit& unit, uint32 xp, uint8 cap)
+UnitXpResult UnitMgr::AddXp(GuildUnit& unit, uint32 xp, uint8 cap)
 {
-    uint32 levels = 0;
+    UnitXpResult result;
     unit.xp += xp;
     while (unit.level < cap && unit.xp >= XpForNextLevel(unit.level))
     {
         unit.xp -= XpForNextLevel(unit.level);
         ++unit.level;
-        ++levels;
-        unit.itemLevel = std::max(unit.itemLevel, uint16(ItemLevelForLevel(unit.level) - 5));
+        ++result.levels;
+    }
+    if (result.levels)
+        RecalcItemLevel(unit);
+
+    if (unit.level < cap)
+        return result;
+
+    // At the cap, XP goes toward the next quality instead.
+    if (unit.quality >= UNIT_QUALITY_EPIC)
+    {
+        unit.xp = 0;
+        unit.promoXp = 0;
+        return result;
     }
 
-    // At the cap, XP stops at one level's worth so nothing is lost when the cap rises.
-    if (unit.level >= cap)
-        unit.xp = std::min(unit.xp, XpForNextLevel(unit.level) - 1);
-    return levels;
+    unit.promoXp += unit.xp;
+    unit.xp = 0;
+    while (unit.quality < UNIT_QUALITY_EPIC && unit.promoXp >= PromotionXp(unit))
+    {
+        unit.promoXp -= PromotionXp(unit);
+        Promote(unit);
+        ++result.promotions;
+    }
+    if (unit.quality >= UNIT_QUALITY_EPIC)
+        unit.promoXp = 0;
+    return result;
+}
+
+uint32 UnitMgr::PromotionXp(GuildUnit const& unit)
+{
+    if (unit.quality >= UNIT_QUALITY_EPIC)
+        return 0;
+    return XpForNextLevel(unit.level) * (unit.quality == UNIT_QUALITY_UNCOMMON ? 5 : 10);
+}
+
+void UnitMgr::Promote(GuildUnit& unit)
+{
+    UnitTemplate const* tmpl = GetTemplate(unit.templateId);
+    unit.quality = std::min<uint8>(unit.quality + 1, UNIT_QUALITY_EPIC);
+    if (!tmpl)
+        return;
+
+    // Rare and epic units have two abilities; rare one trait, epic two.
+    std::size_t const traitTarget = unit.quality == UNIT_QUALITY_EPIC ? 2 : 1;
+    if (!unit.abilities[1])
+    {
+        std::vector<uint8> pool;
+        for (uint8 a : tmpl->abilities)
+            if (a != unit.abilities[0])
+                pool.push_back(a);
+        if (!pool.empty())
+            unit.abilities[unit.abilities[0] ? 1 : 0] = Acore::Containers::SelectRandomContainerElement(pool);
+    }
+    for (std::size_t i = 0; i < traitTarget; ++i)
+    {
+        if (unit.traits[i])
+            continue;
+        std::vector<uint8> pool = tmpl->traits;
+        if (pool.empty())
+            for (uint8 t = 1; t <= UNIT_TRAIT_COUNT; ++t)
+                pool.push_back(t);
+        std::erase_if(pool, [&unit](uint8 t) { return t == unit.traits[0] || t == unit.traits[1]; });
+        if (!pool.empty())
+            unit.traits[i] = Acore::Containers::SelectRandomContainerElement(pool);
+    }
+}
+
+void UnitMgr::RecalcItemLevel(GuildUnit& unit)
+{
+    // Empty gear slots count as the normal item level for the unit's level.
+    uint16 const base = uint16(ItemLevelForLevel(unit.level) - 5);
+    uint16 const weapon = unit.weaponIlvl ? unit.weaponIlvl : base;
+    uint16 const armor = unit.armorIlvl ? unit.armorIlvl : base;
+    unit.itemLevel = std::max<uint16>(base, uint16((weapon + armor) / 2));
 }
 
 UnitTemplate const* UnitMgr::PickTemplate(int8 role) const
@@ -297,7 +377,7 @@ GuildUnit UnitMgr::RollUnit(uint32 guildId, UnitTemplate const& tmpl, uint8 qual
     u.name = PickName(u.race, u.gender, existing);
     u.quality = quality;
     u.level = level;
-    u.itemLevel = uint16(ItemLevelForLevel(level) - urand(3, 6));
+    RecalcItemLevel(u);
 
     std::size_t const abilityCount = quality >= UNIT_QUALITY_RARE ? 2 : 1;
     std::size_t const traitCount = quality == UNIT_QUALITY_EPIC ? 2 : (quality == UNIT_QUALITY_RARE ? 1 : 0);
@@ -403,27 +483,29 @@ bool UnitMgr::CheckRequest(Player* player)
 
 void UnitMgr::SendTemplates(Player* player)
 {
-    // UT\tid\tkind\trole\tclass\ticon\tname\tabilities
+    // UT\tid\tkind\trole\tclass\ticon\tname\tabilities\tarmor
     for (UnitTemplate const& t : _templates)
     {
         std::string abilities;
         for (uint8 a : t.abilities)
             abilities += (abilities.empty() ? "" : ",") + std::to_string(a);
-        GspeAddonComm::Send(player, Acore::StringFormat("UT\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        GspeAddonComm::Send(player, Acore::StringFormat("UT\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             t.id, uint32(t.kind), uint32(t.role), uint32(t.classId),
-            GspeAddonComm::Sanitize(t.icon, 64), GspeAddonComm::Sanitize(t.name, 48), abilities));
+            GspeAddonComm::Sanitize(t.icon, 64), GspeAddonComm::Sanitize(t.name, 48), abilities, uint32(t.armor)));
     }
     GspeAddonComm::Send(player, "UTE");
 }
 
 void UnitMgr::SendUnitLine(Player* player, GuildUnit const& u)
 {
-    // U\tid\ttemplate\trace\tgender\tquality\tlevel\txp\txpNext\titemLevel\ta1\ta2\tt1\tt2\tstatus\tcost\tvitality\tname
-    GspeAddonComm::Send(player, Acore::StringFormat("U\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+    // U\tid\ttemplate\trace\tgender\tquality\tlevel\txp\txpNext\titemLevel\ta1\ta2\tt1\tt2\tstatus\tcost\tvitality\t
+    //   weaponItem\tweaponIlvl\tarmorItem\tarmorIlvl\teffectItem\teffectKind\tpromoXp\tpromoNext\tname
+    GspeAddonComm::Send(player, Acore::StringFormat("U\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         u.id, u.templateId, uint32(u.race), uint32(u.gender), uint32(u.quality), uint32(u.level), u.xp,
         XpForNextLevel(u.level), u.itemLevel, uint32(u.abilities[0]), uint32(u.abilities[1]),
         uint32(u.traits[0]), uint32(u.traits[1]), uint32(u.status), u.cost, uint32(u.vitality),
-        GspeAddonComm::Sanitize(u.name, 48)));
+        u.weaponItem, u.weaponIlvl, u.armorItem, u.armorIlvl, u.effectItem, uint32(u.effectKind), u.promoXp,
+        PromotionXp(u), GspeAddonComm::Sanitize(u.name, 48)));
 }
 
 void UnitMgr::SendUnits(Player* player)
@@ -559,5 +641,192 @@ void UnitMgr::HandleTrainTroop(Player* player, uint16 templateId)
     units.push_back(std::move(u));
 
     GspeAddonComm::Send(player, "RECRUITED\t0");
+    SendUnits(player);
+}
+
+namespace
+{
+bool IsBodyArmorSlot(uint32 inventoryType)
+{
+    switch (inventoryType)
+    {
+        case INVTYPE_HEAD: case INVTYPE_SHOULDERS: case INVTYPE_CHEST: case INVTYPE_ROBE: case INVTYPE_WAIST:
+        case INVTYPE_LEGS: case INVTYPE_FEET: case INVTYPE_WRISTS: case INVTYPE_HANDS:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Tanks: one-handed weapons or shields. Healers: staves, maces or wands. Damage: any weapon.
+bool WeaponFitsRole(uint8 role, ItemTemplate const* p)
+{
+    if (role == UNIT_ROLE_TANK && p->Class == ITEM_CLASS_ARMOR && p->SubClass == ITEM_SUBCLASS_ARMOR_SHIELD)
+        return true;
+    if (p->Class != ITEM_CLASS_WEAPON || p->SubClass == ITEM_SUBCLASS_WEAPON_FISHING_POLE
+        || p->SubClass == ITEM_SUBCLASS_WEAPON_MISC)
+        return false;
+
+    switch (role)
+    {
+        case UNIT_ROLE_TANK:
+            return p->InventoryType == INVTYPE_WEAPON || p->InventoryType == INVTYPE_WEAPONMAINHAND
+                || p->InventoryType == INVTYPE_WEAPONOFFHAND;
+        case UNIT_ROLE_HEALER:
+            return p->SubClass == ITEM_SUBCLASS_WEAPON_STAFF || p->SubClass == ITEM_SUBCLASS_WEAPON_MACE
+                || p->SubClass == ITEM_SUBCLASS_WEAPON_MACE2 || p->SubClass == ITEM_SUBCLASS_WEAPON_WAND;
+        default:
+            return true;
+    }
+}
+
+// Item level of a piece of gear, plus 5 for a permanent enchant and 3 per socketed gem.
+uint16 GearItemLevel(Item const* item)
+{
+    uint32 ilvl = item->GetTemplate()->ItemLevel;
+    if (item->GetEnchantmentId(PERM_ENCHANTMENT_SLOT))
+        ilvl += 5;
+    for (uint32 s = SOCK_ENCHANTMENT_SLOT; s <= SOCK_ENCHANTMENT_SLOT_3; ++s)
+        if (item->GetEnchantmentId(EnchantmentSlot(s)))
+            ilvl += 3;
+    return uint16(std::min<uint32>(ilvl, 0xFFFF));
+}
+
+char const* ArmorName(uint8 armor)
+{
+    switch (armor)
+    {
+        case ITEM_SUBCLASS_ARMOR_CLOTH:   return "cloth";
+        case ITEM_SUBCLASS_ARMOR_LEATHER: return "leather";
+        case ITEM_SUBCLASS_ARMOR_MAIL:    return "mail";
+        case ITEM_SUBCLASS_ARMOR_PLATE:   return "plate";
+        default:                          return "no";
+    }
+}
+} // namespace
+
+uint8 UnitMgr::EffectKindFor(ItemTemplate const* p) const
+{
+    bool const accessory = p->Class == ITEM_CLASS_ARMOR && p->SubClass == ITEM_SUBCLASS_ARMOR_MISC;
+    // Weapons, armor pieces, enhancements and other mission consumables never go in the effect slot.
+    bool const allowedType = accessory || p->Class == ITEM_CLASS_CONTAINER || p->Class == ITEM_CLASS_QUIVER
+        || (p->Class == ITEM_CLASS_TRADE_GOODS && p->SubClass == ITEM_SUBCLASS_DEVICES)
+        || (p->Class == ITEM_CLASS_CONSUMABLE
+            && (p->SubClass == ITEM_SUBCLASS_CONSUMABLE || p->SubClass == ITEM_SUBCLASS_CONSUMABLE_OTHER)
+            && p->Name1.find("Poison") == std::string::npos);
+    if (!allowedType)
+        return UNIT_EFFECT_NONE;
+
+    switch (sWorkOrderMgr->CraftedBy(p->ItemId))
+    {
+        case SKILL_ENGINEERING:    return UNIT_EFFECT_ENGINEERING;
+        case SKILL_JEWELCRAFTING:  return UNIT_EFFECT_JEWELCRAFTING;
+        case SKILL_ALCHEMY:        return UNIT_EFFECT_ALCHEMY;
+        case SKILL_INSCRIPTION:    return UNIT_EFFECT_INSCRIPTION;
+        case SKILL_TAILORING:      return UNIT_EFFECT_TAILORING;
+        case SKILL_LEATHERWORKING: return UNIT_EFFECT_LEATHERWORKING;
+        default:                   break;
+    }
+
+    if (accessory && (p->InventoryType == INVTYPE_TRINKET || p->InventoryType == INVTYPE_FINGER
+                      || p->InventoryType == INVTYPE_NECK))
+        return UNIT_EFFECT_ACCESSORY;
+    return UNIT_EFFECT_NONE;
+}
+
+void UnitMgr::HandleEquip(Player* player, uint32 unitId, uint8 gearSlot, uint8 clientBag, uint8 clientSlot)
+{
+    if (!CheckRequest(player))
+        return;
+
+    uint32 const guildId = player->GetGuildId();
+    GuildUnit* unit = FindUnit(guildId, unitId);
+    if (!unit || unit->status == UNIT_STATUS_CANDIDATE)
+        return;
+    if (IsTroop(*unit))
+    {
+        GspeAddonComm::SendError(player, "Troops can't be given gear.");
+        return;
+    }
+    if (unit->status == UNIT_STATUS_ON_MISSION)
+    {
+        GspeAddonComm::SendError(player, "That unit is away on a mission.");
+        return;
+    }
+
+    uint8 bag = 0, slot = 0;
+    Item* item = GspeAddonComm::ClientSlotToServer(clientBag, clientSlot, bag, slot) ? player->GetItemByPos(bag, slot) : nullptr;
+    if (!item || item->IsInTrade())
+    {
+        GspeAddonComm::SendError(player, "Item not found in your bags.");
+        return;
+    }
+
+    ItemTemplate const* proto = item->GetTemplate();
+    UnitTemplate const* tmpl = GetTemplate(unit->templateId);
+    if (!tmpl)
+        return;
+
+    uint16 const cap = uint16(ItemLevelForLevel(unit->level) + UNIT_GEAR_ILVL_ALLOWANCE);
+    switch (gearSlot)
+    {
+        case UNIT_GEAR_WEAPON:
+        case UNIT_GEAR_ARMOR:
+        {
+            bool const weapon = gearSlot == UNIT_GEAR_WEAPON;
+            if (weapon && !WeaponFitsRole(tmpl->role, proto))
+            {
+                GspeAddonComm::SendError(player, tmpl->role == UNIT_ROLE_TANK ? "Tanks use one-handed weapons or shields."
+                    : tmpl->role == UNIT_ROLE_HEALER ? "Healers use staves, maces or wands." : "That isn't a weapon.");
+                return;
+            }
+            if (!weapon && (proto->Class != ITEM_CLASS_ARMOR || proto->SubClass != tmpl->armor || !IsBodyArmorSlot(proto->InventoryType)))
+            {
+                GspeAddonComm::SendError(player, Acore::StringFormat("{} wears {} armor (head, shoulders, chest, wrists, hands, waist, legs or feet).",
+                    unit->name, ArmorName(tmpl->armor)));
+                return;
+            }
+
+            uint16 const ilvl = std::min(GearItemLevel(item), cap);
+            uint16 const current = weapon ? unit->weaponIlvl : unit->armorIlvl;
+            if (ilvl <= current)
+            {
+                GspeAddonComm::SendError(player, Acore::StringFormat("That wouldn't improve {}'s {} (item level {}).",
+                    unit->name, weapon ? "weapon" : "armor", current));
+                return;
+            }
+
+            (weapon ? unit->weaponItem : unit->armorItem) = proto->ItemId;
+            (weapon ? unit->weaponIlvl : unit->armorIlvl) = ilvl;
+            break;
+        }
+        case UNIT_GEAR_EFFECT:
+        {
+            uint8 const kind = EffectKindFor(proto);
+            if (!kind)
+            {
+                GspeAddonComm::SendError(player, "That item has no effect for units. Try a trinket, ring, necklace, or a crafted bag or gadget.");
+                return;
+            }
+            uint32 const itemLevel = proto->RequiredLevel ? proto->RequiredLevel : proto->ItemLevel;
+            if (itemLevel + 15 < unit->level)
+            {
+                GspeAddonComm::SendError(player, "That item is too low level for this unit.");
+                return;
+            }
+            unit->effectItem = proto->ItemId;
+            unit->effectKind = kind;
+            break;
+        }
+        default:
+            return;
+    }
+
+    uint32 one = 1;
+    player->DestroyItemCount(item, one, true);
+    RecalcItemLevel(*unit);
+    SaveUnit(*unit);
+
+    GspeAddonComm::Send(player, Acore::StringFormat("EQUIPPED\t{}", unitId));
     SendUnits(player);
 }

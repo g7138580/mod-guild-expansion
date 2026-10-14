@@ -42,6 +42,32 @@ GE.ROLES = {
 
 GE.QUALITY_NAMES = { [2] = "Uncommon", [3] = "Rare", [4] = "Epic" }
 
+GE.ARMOR_NAMES = { [1] = "Cloth", [2] = "Leather", [3] = "Mail", [4] = "Plate" }
+
+-- Consumables sent with a mission. Keep in sync with MissionConsumableKind in src/GspeMissions.h.
+GE.CONSUMABLES = {
+    [1] = { name = "Potion",      desc = "+10% success" },
+    [2] = { name = "Flask",       desc = "+20% success" },
+    [3] = { name = "Elixir",      desc = "+10% success, units gain 25% more XP" },
+    [4] = { name = "Food",        desc = "+10% success, units gain 25% more XP" },
+    [5] = { name = "Bandage",     desc = "+5% success, troops don't lose a use" },
+    [6] = { name = "Enhancement", desc = "+10% success, +10 item level for every unit" },
+    [7] = { name = "Scroll",      desc = "+10% success on delves and raids, +5% elsewhere" },
+    [8] = { name = "Explosive",   desc = "Counters Siege Engines and Minion Swarm, +5% success" },
+    [9] = { name = "Poison",      desc = "+10% success, +10% bonus loot chance" },
+}
+
+-- Effect-slot items, by the profession that made them. Keep in sync with UnitEffect in src/GspeUnits.h.
+GE.UNIT_EFFECTS = {
+    [1] = { name = "Engineering",    desc = "Counters Siege Engines" },
+    [2] = { name = "Jewelcrafting",  desc = "+5% success on every mission" },
+    [3] = { name = "Alchemy",        desc = "Missions 15% shorter" },
+    [4] = { name = "Inscription",    desc = "+10% success on delves and raids" },
+    [5] = { name = "Tailoring",      desc = "+25% crafting materials from missions" },
+    [6] = { name = "Leatherworking", desc = "Troops sent with this unit survive lethal missions" },
+    [7] = { name = "Accessory",      desc = "+3% success on every mission" },
+}
+
 -- r, g, b only (GetItemQualityColor also returns a hex string, which SetVertexColor can't take).
 function GE.QualityRGB(quality)
     local r, g, b = GetItemQualityColor(quality or 2)
