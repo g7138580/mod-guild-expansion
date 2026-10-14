@@ -144,3 +144,32 @@ GuildExpansion.Missions.CostMultiplier = 1.0
 GuildExpansion.Missions.GoldMultiplier = 1.0
 GuildExpansion.Missions.GuildXpMultiplier = 1.0
 GuildExpansion.Missions.UnitXpMultiplier = 1.0
+
+########################################
+# Daily contracts
+########################################
+
+GuildExpansion.Contracts.Enable = 1
+
+# Contracts per character per day; they are replaced at the server's daily quest reset.
+GuildExpansion.Contracts.Count = 3
+
+# Free rerolls per character per day (more can be bought from the quartermaster).
+GuildExpansion.Contracts.FreeRerolls = 1
+
+# Offer battleground and honorable kill contracts (from level 10), and dungeon boss
+# contracts (from level 15).
+GuildExpansion.Contracts.Battlegrounds = 1
+GuildExpansion.Contracts.DungeonBosses = 1
+
+# Rewards per contract, by the character's level when the contract was rolled:
+# supplies = SuppliesBase + SuppliesPerLevel * level, guild XP = GuildXpPerLevel * level,
+# gold (copper) = GoldPerLevelSquared * level * level.
+GuildExpansion.Contracts.SuppliesBase = 15
+GuildExpansion.Contracts.SuppliesPerLevel = 0.6
+GuildExpansion.Contracts.GuildXpPerLevel = 100
+GuildExpansion.Contracts.GoldPerLevelSquared = 10
+
+# Bonus for finishing all of the day's contracts: supplies plus a consumable, materials or gear.
+GuildExpansion.Contracts.BonusSuppliesBase = 20
+GuildExpansion.Contracts.BonusSuppliesPerLevel = 0.5

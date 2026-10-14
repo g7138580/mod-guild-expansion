@@ -3,6 +3,7 @@
  */
 
 #include "GspeConfig.h"
+#include "GspeContracts.h"
 #include "GspeMissions.h"
 #include "GspeProgress.h"
 #include "GspeUnits.h"
@@ -59,6 +60,8 @@ public:
             { "recruits", HandleRecruits, SEC_ADMINISTRATOR, Console::No },
             { "missions", HandleMissions, SEC_ADMINISTRATOR, Console::No },
             { "finish",   HandleFinish,   SEC_ADMINISTRATOR, Console::No },
+            { "contracts", HandleContracts, SEC_ADMINISTRATOR, Console::No },
+            { "contract", HandleContract, SEC_ADMINISTRATOR, Console::No },
             { "",         HandleInfo,     SEC_GAMEMASTER,    Console::No },
         };
 
@@ -171,6 +174,27 @@ public:
             return false;
         sWorkOrderMgr->ResetOrders(target);
         handler->SendSysMessage(Acore::StringFormat("GuildExpansion: new work orders for {}.", target->GetName()));
+        return true;
+    }
+
+    // Replaces the selected (or own) character's contracts with new ones.
+    static bool HandleContracts(ChatHandler* handler)
+    {
+        Player* target = handler->getSelectedPlayerOrSelf();
+        if (!target)
+            return false;
+        sContractMgr->ResetContracts(target);
+        handler->SendSysMessage(Acore::StringFormat("GuildExpansion: new contracts for {}.", target->GetName()));
+        return true;
+    }
+
+    // Finishes contract N (1-based) of the selected (or own) character.
+    static bool HandleContract(ChatHandler* handler, uint8 number)
+    {
+        Player* target = handler->getSelectedPlayerOrSelf();
+        if (!target || !number)
+            return false;
+        sContractMgr->FinishContract(target, number - 1);
         return true;
     }
 };

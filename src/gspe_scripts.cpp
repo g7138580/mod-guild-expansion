@@ -4,18 +4,21 @@
 
 #include "GspeAddonComm.h"
 #include "GspeConfig.h"
+#include "GspeContracts.h"
 #include "GspeMissions.h"
 #include "GspePerks.h"
 #include "GspeProgress.h"
 #include "GspeUnits.h"
 #include "GspeWorkOrders.h"
 
+#include "Battleground.h"
 #include "Creature.h"
 #include "DatabaseEnv.h"
 #include "Group.h"
 #include "Guild.h"
 #include "GuildMgr.h"
 #include "Player.h"
+#include "ScriptDefines/AllBattlegroundScript.h"
 #include "ScriptDefines/AllSpellScript.h"
 #include "ScriptDefines/GuildScript.h"
 #include "ScriptDefines/PlayerScript.h"
@@ -322,6 +325,10 @@ void Dispatch(Player* player, std::string_view request)
     }
     else if (cmd == "MCOLLECT")
         sMissionMgr->HandleCollect(player, ArgAt<uint32>(args, 1));
+    else if (cmd == "CONTRACTS")
+        sContractMgr->SendContracts(player);
+    else if (cmd == "CREROLL")
+        sContractMgr->HandleReroll(player, ArgAt<uint8>(args, 1));
 }
 } // namespace
 
@@ -342,6 +349,7 @@ public:
         sWorkOrderMgr->BuildCatalog();
         sUnitMgr->LoadTemplates();
         sMissionMgr->Load();
+        sContractMgr->BuildCatalog();
     }
 
     void OnUpdate(uint32 diff) override
@@ -406,7 +414,8 @@ public:
           PLAYERHOOK_ON_GIVE_REPUTATION, PLAYERHOOK_ON_LOGIN, PLAYERHOOK_ON_LOGOUT, PLAYERHOOK_ON_UPDATE_SKILL,
           PLAYERHOOK_ON_VICTIM_REWARD_AFTER, PLAYERHOOK_CAN_PLAYER_USE_PRIVATE_CHAT, PLAYERHOOK_ON_SPELL_CAST,
           PLAYERHOOK_ON_UPDATE, PLAYERHOOK_ON_PLAYER_RELEASED_GHOST, PLAYERHOOK_ON_PLAYER_RESURRECT,
-          PLAYERHOOK_ON_BEFORE_DURABILITY_REPAIR, PLAYERHOOK_ON_QUEST_COMPUTE_EXP }) { }
+          PLAYERHOOK_ON_BEFORE_DURABILITY_REPAIR, PLAYERHOOK_ON_QUEST_COMPUTE_EXP, PLAYERHOOK_ON_CREATURE_KILL_CREDIT,
+          PLAYERHOOK_ON_PLAYER_COMPLETE_QUEST, PLAYERHOOK_ON_UPDATE_GATHERING_SKILL, PLAYERHOOK_ON_LOOT_ITEM }) { }
 
     void OnPlayerLogin(Player* player) override
     {
@@ -429,6 +438,7 @@ public:
         sWorkingOvertimeGuard.erase(key);
         sPendingHastyHearth.erase(key);
         sWorkOrderMgr->OnLogout(player);
+        sContractMgr->OnLogout(player);
     }
 
     // The add-on whispers itself; swallow those messages so they never show up as chat.
@@ -507,8 +517,37 @@ public:
     void OnPlayerVictimRewardAfter(Player* player, Player* /*victim*/, uint32& /*killer_title*/,
                                    int32& /*victim_rank*/, float& honor_f) override
     {
-        if (honor_f > 0.f)
-            honor_f *= GspePerks::HonorMultiplier(GuildLevelOf(player));
+        if (honor_f <= 0.f)
+            return;
+
+        honor_f *= GspePerks::HonorMultiplier(GuildLevelOf(player));
+        sContractMgr->OnHonorableKill(player);
+    }
+
+    void OnPlayerCreatureKillCredit(Player* player, Creature* killed) override
+    {
+        if (sGspeConfig->enable)
+            sContractMgr->OnKillCredit(player, killed);
+    }
+
+    // Runs when the quest is turned in and rewarded.
+    void OnPlayerCompleteQuest(Player* player, Quest const* quest) override
+    {
+        if (sGspeConfig->enable)
+            sContractMgr->OnQuestRewarded(player, quest);
+    }
+
+    void OnPlayerUpdateGatheringSkill(Player* player, uint32 skillId, uint32 /*current*/, uint32 /*gray*/,
+                                      uint32 /*green*/, uint32 /*yellow*/, uint32& /*gain*/) override
+    {
+        if (sGspeConfig->enable)
+            sContractMgr->OnGather(player, skillId);
+    }
+
+    void OnPlayerLootItem(Player* player, Item* /*item*/, uint32 /*count*/, ObjectGuid lootGuid) override
+    {
+        if (sGspeConfig->enable)
+            sContractMgr->OnLoot(player, lootGuid);
     }
 
     void OnPlayerBeforeLootMoney(Player* player, Loot* loot) override
@@ -649,6 +688,20 @@ public:
     }
 };
 
+// Battleground contracts.
+class Gspe_AllBattlegroundScript : public AllBattlegroundScript
+{
+public:
+    Gspe_AllBattlegroundScript() : AllBattlegroundScript("Gspe_AllBattlegroundScript",
+        { ALLBATTLEGROUNDHOOK_ON_BATTLEGROUND_END_REWARD }) { }
+
+    void OnBattlegroundEndReward(Battleground* bg, Player* player, TeamId winnerTeamId) override
+    {
+        if (sGspeConfig->enable && player)
+            sContractMgr->OnBattlegroundEnd(player, bg, winnerTeamId != TEAM_NEUTRAL && player->GetBgTeamId() == winnerTeamId);
+    }
+};
+
 class spell_gspe_mobile_banking : public SpellScript
 {
     PrepareSpellScript(spell_gspe_mobile_banking);
@@ -684,5 +737,6 @@ void AddSC_gspe_scripts()
     new Gspe_GuildScript();
     new Gspe_PlayerScript();
     new Gspe_AllSpellScript();
+    new Gspe_AllBattlegroundScript();
     RegisterSpellScript(spell_gspe_mobile_banking);
 }

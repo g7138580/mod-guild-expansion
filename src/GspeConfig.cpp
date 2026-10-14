@@ -71,4 +71,16 @@ void GspeConfig::Load()
     consumableBonus = sConfigMgr->GetOption<uint32>("GuildExpansion.Missions.ConsumableBonus", 10);
     flaskBonus = sConfigMgr->GetOption<uint32>("GuildExpansion.Missions.FlaskBonus", 20);
     troopCost = sConfigMgr->GetOption<uint32>("GuildExpansion.Units.TroopCost", 40);
+
+    contractsEnable = sConfigMgr->GetOption<bool>("GuildExpansion.Contracts.Enable", true);
+    contractCount = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("GuildExpansion.Contracts.Count", 3), 1, 5);
+    contractFreeRerolls = sConfigMgr->GetOption<uint32>("GuildExpansion.Contracts.FreeRerolls", 1);
+    contractBattlegrounds = sConfigMgr->GetOption<bool>("GuildExpansion.Contracts.Battlegrounds", true);
+    contractDungeonBosses = sConfigMgr->GetOption<bool>("GuildExpansion.Contracts.DungeonBosses", true);
+    contractSuppliesBase = std::max(0.0f, sConfigMgr->GetOption<float>("GuildExpansion.Contracts.SuppliesBase", 15.0f));
+    contractSuppliesPerLevel = std::max(0.0f, sConfigMgr->GetOption<float>("GuildExpansion.Contracts.SuppliesPerLevel", 0.6f));
+    contractGuildXpPerLevel = sConfigMgr->GetOption<uint32>("GuildExpansion.Contracts.GuildXpPerLevel", 100);
+    contractGoldPerLevelSquared = std::max(0.0f, sConfigMgr->GetOption<float>("GuildExpansion.Contracts.GoldPerLevelSquared", 10.0f));
+    contractBonusSuppliesBase = std::max(0.0f, sConfigMgr->GetOption<float>("GuildExpansion.Contracts.BonusSuppliesBase", 20.0f));
+    contractBonusSuppliesPerLevel = std::max(0.0f, sConfigMgr->GetOption<float>("GuildExpansion.Contracts.BonusSuppliesPerLevel", 0.5f));
 }

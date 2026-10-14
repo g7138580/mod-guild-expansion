@@ -74,6 +74,19 @@ struct GspeConfig
     uint32 consumableBonus = 10;
     uint32 flaskBonus = 20;
     uint32 troopCost = 40;
+
+    // Contracts
+    bool contractsEnable = true;
+    uint32 contractCount = 3;
+    uint32 contractFreeRerolls = 1;
+    bool contractBattlegrounds = true;
+    bool contractDungeonBosses = true;
+    float contractSuppliesBase = 15.0f;
+    float contractSuppliesPerLevel = 0.6f;
+    uint32 contractGuildXpPerLevel = 100;
+    float contractGoldPerLevelSquared = 10.0f;
+    float contractBonusSuppliesBase = 20.0f;
+    float contractBonusSuppliesPerLevel = 0.5f;
 };
 
 #define sGspeConfig GspeConfig::instance()
