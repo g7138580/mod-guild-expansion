@@ -7,10 +7,12 @@ An AzerothCore (WotLK 3.3.5a) module that adds guild progression built for playi
 ## Features
 
 - **Guild levels and perks.** Guilds level from 1 to 25 by earning guild XP. Perks include bonus experience and reputation, a faster mount, cheaper repairs, a shorter Hearthstone cooldown, longer elixirs and flasks, and a summonable guild bank.
-- **Work orders.** Each character gets crafting and gathering orders based on its professions. Place the items in the order and turn it in for gold, guild XP and Guild Supplies.
-- **Units.** Recruit heroes and specialists into the guild. Units have a role, level, item level, abilities and traits.
-- **Missions.** Send units on timed missions for gold, supplies, guild XP, crafting materials and gear. Missions keep running while you are offline.
-- **Guild Supplies.** Earned from work orders and missions, spent to start missions and recruit units.
+- **Work orders.** Each character gets crafting and gathering orders based on its professions. Place the items in the order and turn it in for gold, guild XP and Guild Supplies. An abandoned order is replaced after a delay.
+- **Units.** Recruit heroes and specialists into the guild. Units have a role, level, item level, abilities and traits, and are promoted from uncommon to rare to epic with experience.
+- **Unit equipment.** Give units a weapon and armor to raise their item level, and an accessory in their effect slot for a bonus that depends on the profession that made it.
+- **Troops.** Train troops with Guild Supplies to fill mission slots. They wear out after a few missions.
+- **Missions.** Send units on timed missions for gold, supplies, guild XP, crafting materials and gear. Missions keep running while you are offline. Some missions are rare or carry an effect, and each kind of consumable sent along has its own bonus.
+- **Guild Supplies.** Earned from work orders and missions, spent to start missions, recruit units and train troops.
 
 ## Requirements
 
