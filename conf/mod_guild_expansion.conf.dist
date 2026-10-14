@@ -173,3 +173,11 @@ GuildExpansion.Contracts.GoldPerLevelSquared = 10
 # Bonus for finishing all of the day's contracts: supplies plus a consumable, materials or gear.
 GuildExpansion.Contracts.BonusSuppliesBase = 20
 GuildExpansion.Contracts.BonusSuppliesPerLevel = 0.5
+
+########################################
+# Guild quartermaster
+########################################
+
+# Sells bags, fishing poles, consumables and services for guild supplies. The stock is
+# in the world DB table mod_gspe_qm_stock.
+GuildExpansion.Quartermaster.Enable = 1

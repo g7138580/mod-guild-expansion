@@ -7,6 +7,7 @@
     PLACED\torderId\ttotal | DONE\torderId\tgold\tguildXp\tsupplies
     CB\tcount\tstatus\tresetsIn\trerollsLeft\tbonusPaid\tbonusSupplies\tdone, C\t..., CE   contracts
     CP\tslot\tprogress\tneeded\tlabel | CDONE\tslot\tgold\tsupplies\tguildXp\ttitle | CBONUS\tsupplies\titem\tcount
+    QB\tstatus\tguildLevel, QT\t..., QE   quartermaster stock | QBOUGHT\trowId
   Requests are whispered to ourselves ("GSPE", "<command> <args>"); the server swallows them.
 ]]
 
@@ -34,6 +35,8 @@ GE.chance = nil         -- last success preview: { id, value, countered = set, m
 GE.lastResult = nil     -- last collected mission result
 GE.contracts = {}       -- today's contracts, in slot order
 GE.contractInfo = { status = 0, resetsAt = 0, rerollsLeft = 0, bonusPaid = false, bonusSupplies = 0, done = 0 }
+GE.qmStock = {}         -- quartermaster rows shown to this character
+GE.qmInfo = { status = 0, guildLevel = 0 }
 
 local DEFAULT_OPTIONS = {
     xpText = true,
@@ -46,6 +49,7 @@ local pendingOrders
 local pendingUnits
 local pendingMissions
 local pendingContracts
+local pendingStock
 local hadSnapshotThisSession = false
 local lastPull = 0
 
@@ -483,6 +487,30 @@ local function OnLine(line)
         GE.Notify.Toast("Contract complete: |cffffffff" .. (fields[7] or "") .. "|r")
     elseif cmd == "CBONUS" then
         GE.Notify.Toast("All of today's contracts complete!", "Sound\\Interface\\LevelUp.wav")
+    elseif cmd == "QB" then
+        pendingStock = {}
+        GE.qmInfo = { status = tonumber(fields[3]) or 0, guildLevel = tonumber(fields[4]) or 0 }
+    elseif cmd == "QT" then
+        if pendingStock then
+            pendingStock[#pendingStock + 1] = {
+                id = tonumber(fields[3]) or 0,
+                category = tonumber(fields[4]) or 0,
+                item = tonumber(fields[5]) or 0,
+                count = tonumber(fields[6]) or 1,
+                service = tonumber(fields[7]) or 0,
+                cost = tonumber(fields[8]) or 0,
+                guildLevel = tonumber(fields[9]) or 1,
+                limit = tonumber(fields[10]) or 0,
+                bought = tonumber(fields[11]) or 0,
+                state = tonumber(fields[12]) or 0,
+            }
+        end
+    elseif cmd == "QE" then
+        GE.qmStock = pendingStock or {}
+        pendingStock = nil
+        Fire("quartermaster")
+    elseif cmd == "QBOUGHT" then
+        PlaySound("LOOTWINDOWCOINSOUND")
     elseif cmd == "MDONE" then
         local tmpl = GE.missionTemplates[tonumber(fields[4]) or 0]
         GE.Notify.MissionDone(tmpl and tmpl.name or "A mission")
@@ -530,6 +558,7 @@ local function PrintHelp()
     DEFAULT_CHAT_FRAME:AddMessage("  /gl units - open the Units tab")
     DEFAULT_CHAT_FRAME:AddMessage("  /gl orders - open the Work Orders tab")
     DEFAULT_CHAT_FRAME:AddMessage("  /gl contracts - open the Contracts tab")
+    DEFAULT_CHAT_FRAME:AddMessage("  /gl qm - open the Quartermaster tab")
     DEFAULT_CHAT_FRAME:AddMessage("  /gl guild - open the Guild tab (level and perks)")
     DEFAULT_CHAT_FRAME:AddMessage("  /gl scale 0.9 - change the window size (0.6 to 1.4)")
     DEFAULT_CHAT_FRAME:AddMessage("  /gl bank - use Mobile Banking")
@@ -550,6 +579,8 @@ SlashCmdList["GUILDEXPANSION"] = function(input)
         GE.UI.Show("missions")
     elseif cmd == "contracts" or cmd == "c" then
         GE.UI.Show("contracts")
+    elseif cmd == "qm" or cmd == "quartermaster" or cmd == "shop" then
+        GE.UI.Show("quartermaster")
     elseif cmd == "guild" or cmd == "perks" then
         GE.UI.Show("guild")
     elseif cmd:match("^scale") then

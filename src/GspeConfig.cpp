@@ -83,4 +83,6 @@ void GspeConfig::Load()
     contractGoldPerLevelSquared = std::max(0.0f, sConfigMgr->GetOption<float>("GuildExpansion.Contracts.GoldPerLevelSquared", 10.0f));
     contractBonusSuppliesBase = std::max(0.0f, sConfigMgr->GetOption<float>("GuildExpansion.Contracts.BonusSuppliesBase", 20.0f));
     contractBonusSuppliesPerLevel = std::max(0.0f, sConfigMgr->GetOption<float>("GuildExpansion.Contracts.BonusSuppliesPerLevel", 0.5f));
+
+    quartermasterEnable = sConfigMgr->GetOption<bool>("GuildExpansion.Quartermaster.Enable", true);
 }

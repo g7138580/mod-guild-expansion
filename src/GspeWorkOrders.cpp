@@ -680,6 +680,30 @@ void WorkOrderMgr::ResetOrders(Player* player)
     SendOrders(player);
 }
 
+bool WorkOrderMgr::HasWaitingOrder(Player* player)
+{
+    CharacterOrders* co = GetOrders(player);
+    uint32 const now = uint32(time(nullptr));
+    return std::any_of(co->orders.begin(), co->orders.end(),
+        [now](WorkOrder const& o) { return !o.item && o.expires > now; });
+}
+
+void WorkOrderMgr::SkipWait(Player* player)
+{
+    // Expire the first waiting slot; SendOrders refills it with a new order.
+    CharacterOrders* co = GetOrders(player);
+    uint32 const now = uint32(time(nullptr));
+    for (WorkOrder& o : co->orders)
+    {
+        if (o.item || o.expires <= now)
+            continue;
+        o.expires = now;
+        CharacterDatabase.Execute("UPDATE mod_gspe_work_order SET expires = {} WHERE id = {}", now, o.id);
+        break;
+    }
+    SendOrders(player);
+}
+
 uint16 WorkOrderMgr::CraftedBy(uint32 item) const
 {
     auto itr = _craftedBy.find(item);

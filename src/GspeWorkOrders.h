@@ -62,6 +62,10 @@ public:
     // GM: drop all of a character's orders and generate new ones.
     void ResetOrders(Player* player);
 
+    // Quartermaster service: an abandoned order's slot is waiting for a new order / gets one now.
+    [[nodiscard]] bool HasWaitingOrder(Player* player);
+    void SkipWait(Player* player);
+
     // A random gathered material suited to the level, from one gathering skill or from any
     // (skill = ANY_SKILL); 0 if none.
     static constexpr uint16 ANY_SKILL = 0xFFFF;

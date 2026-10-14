@@ -8,6 +8,7 @@
 #include "GspeMissions.h"
 #include "GspePerks.h"
 #include "GspeProgress.h"
+#include "GspeQuartermaster.h"
 #include "GspeUnits.h"
 #include "GspeWorkOrders.h"
 
@@ -329,6 +330,10 @@ void Dispatch(Player* player, std::string_view request)
         sContractMgr->SendContracts(player);
     else if (cmd == "CREROLL")
         sContractMgr->HandleReroll(player, ArgAt<uint8>(args, 1));
+    else if (cmd == "QM")
+        sQuartermasterMgr->SendStock(player);
+    else if (cmd == "QBUY")
+        sQuartermasterMgr->HandleBuy(player, ArgAt<uint16>(args, 1));
 }
 } // namespace
 
@@ -350,6 +355,7 @@ public:
         sUnitMgr->LoadTemplates();
         sMissionMgr->Load();
         sContractMgr->BuildCatalog();
+        sQuartermasterMgr->Load();
     }
 
     void OnUpdate(uint32 diff) override
@@ -439,6 +445,7 @@ public:
         sPendingHastyHearth.erase(key);
         sWorkOrderMgr->OnLogout(player);
         sContractMgr->OnLogout(player);
+        sQuartermasterMgr->OnLogout(player);
     }
 
     // The add-on whispers itself; swallow those messages so they never show up as chat.

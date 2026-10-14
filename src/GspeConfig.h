@@ -87,6 +87,9 @@ struct GspeConfig
     float contractGoldPerLevelSquared = 10.0f;
     float contractBonusSuppliesBase = 20.0f;
     float contractBonusSuppliesPerLevel = 0.5f;
+
+    // Quartermaster
+    bool quartermasterEnable = true;
 };
 
 #define sGspeConfig GspeConfig::instance()
