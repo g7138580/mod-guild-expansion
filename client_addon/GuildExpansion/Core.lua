@@ -5,6 +5,8 @@
     CLEAR | ERROR\ttext
     WOB\tcount\tstatus, WO\t..., WOE    work order list (status 0 ok, 1 no guild, 2 disabled)
     PLACED\torderId\ttotal | DONE\torderId\tgold\tguildXp\tsupplies
+    CB\tcount\tstatus\tresetsIn\trerollsLeft\tbonusPaid\tbonusSupplies\tdone, C\t..., CE   contracts
+    CP\tslot\tprogress\tneeded\tlabel | CDONE\tslot\tgold\tsupplies\tguildXp\ttitle | CBONUS\tsupplies\titem\tcount
   Requests are whispered to ourselves ("GSPE", "<command> <args>"); the server swallows them.
 ]]
 
@@ -30,6 +32,8 @@ GE.running = {}         -- missions in progress
 GE.missionInfo = { slots = 0, status = 0 }
 GE.chance = nil         -- last success preview: { id, value, countered = set, missing = set }
 GE.lastResult = nil     -- last collected mission result
+GE.contracts = {}       -- today's contracts, in slot order
+GE.contractInfo = { status = 0, resetsAt = 0, rerollsLeft = 0, bonusPaid = false, bonusSupplies = 0, done = 0 }
 
 local DEFAULT_OPTIONS = {
     xpText = true,
@@ -41,6 +45,7 @@ local listeners = {}
 local pendingOrders
 local pendingUnits
 local pendingMissions
+local pendingContracts
 local hadSnapshotThisSession = false
 local lastPull = 0
 
@@ -256,6 +261,31 @@ function GE.RequestMissions()
     GE.Send("MISSIONS")
 end
 
+local function ParseContract(f)
+    return {
+        slot = tonumber(f[3]) or 0,
+        kind = tonumber(f[4]) or 0,
+        target = tonumber(f[5]) or 0,
+        needed = tonumber(f[6]) or 1,
+        progress = tonumber(f[7]) or 0,
+        done = f[8] == "1",
+        gold = tonumber(f[9]) or 0,
+        supplies = tonumber(f[10]) or 0,
+        guildXp = tonumber(f[11]) or 0,
+        title = f[12] or "",
+        label = f[13] or "",
+    }
+end
+
+function GE.FindContract(slot)
+    for _, c in ipairs(GE.contracts) do
+        if c.slot == slot then
+            return c
+        end
+    end
+    return nil
+end
+
 -- Troops are units whose template is kind 2.
 function GE.IsTroop(unit)
     local tmpl = GE.unitTemplates[unit.template]
@@ -423,6 +453,36 @@ local function OnLine(line)
         }
         PlaySoundFile(GE.lastResult.success and "Sound\\Interface\\iQuestComplete.wav" or "Sound\\Interface\\iQuestFailed.wav")
         Fire("result")
+    elseif cmd == "CB" then
+        pendingContracts = {}
+        GE.contractInfo = {
+            status = tonumber(fields[4]) or 0,
+            resetsAt = GetTime() + (tonumber(fields[5]) or 0),
+            rerollsLeft = tonumber(fields[6]) or 0,
+            bonusPaid = fields[7] == "1",
+            bonusSupplies = tonumber(fields[8]) or 0,
+            done = tonumber(fields[9]) or 0,
+        }
+    elseif cmd == "C" then
+        if pendingContracts then
+            pendingContracts[#pendingContracts + 1] = ParseContract(fields)
+        end
+    elseif cmd == "CE" then
+        GE.contracts = pendingContracts or {}
+        pendingContracts = nil
+        Fire("contracts")
+    elseif cmd == "CP" then
+        local c = GE.FindContract(tonumber(fields[3]) or -1)
+        if c then
+            c.progress = tonumber(fields[4]) or c.progress
+            Fire("contracts")
+        end
+        -- Shown like a quest objective update.
+        UIErrorsFrame:AddMessage(string.format("%s: %s/%s", fields[6] or "", fields[4] or "0", fields[5] or "0"), 1.0, 1.0, 0.0, 1.0)
+    elseif cmd == "CDONE" then
+        GE.Notify.Toast("Contract complete: |cffffffff" .. (fields[7] or "") .. "|r")
+    elseif cmd == "CBONUS" then
+        GE.Notify.Toast("All of today's contracts complete!", "Sound\\Interface\\LevelUp.wav")
     elseif cmd == "MDONE" then
         local tmpl = GE.missionTemplates[tonumber(fields[4]) or 0]
         GE.Notify.MissionDone(tmpl and tmpl.name or "A mission")
@@ -469,6 +529,7 @@ local function PrintHelp()
     DEFAULT_CHAT_FRAME:AddMessage("  /gl missions - open the Missions tab")
     DEFAULT_CHAT_FRAME:AddMessage("  /gl units - open the Units tab")
     DEFAULT_CHAT_FRAME:AddMessage("  /gl orders - open the Work Orders tab")
+    DEFAULT_CHAT_FRAME:AddMessage("  /gl contracts - open the Contracts tab")
     DEFAULT_CHAT_FRAME:AddMessage("  /gl guild - open the Guild tab (level and perks)")
     DEFAULT_CHAT_FRAME:AddMessage("  /gl scale 0.9 - change the window size (0.6 to 1.4)")
     DEFAULT_CHAT_FRAME:AddMessage("  /gl bank - use Mobile Banking")
@@ -487,6 +548,8 @@ SlashCmdList["GUILDEXPANSION"] = function(input)
         GE.UI.Show("units")
     elseif cmd == "missions" or cmd == "m" then
         GE.UI.Show("missions")
+    elseif cmd == "contracts" or cmd == "c" then
+        GE.UI.Show("contracts")
     elseif cmd == "guild" or cmd == "perks" then
         GE.UI.Show("guild")
     elseif cmd:match("^scale") then

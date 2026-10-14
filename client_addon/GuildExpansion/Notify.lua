@@ -107,10 +107,9 @@ end
 
 local toast
 
--- "Mission complete" alert near the top of the screen, plus a chat line.
-function Notify.MissionDone(name)
-    GE.Print("Mission complete: |cffffffff" .. name .. "|r. Open /gl missions to collect.")
-    PlaySoundFile("Sound\\Interface\\iQuestComplete.wav")
+-- Alert near the top of the screen (mission or contract complete).
+function Notify.Toast(text, sound)
+    PlaySoundFile(sound or "Sound\\Interface\\iQuestComplete.wav")
 
     if not toast then
         toast = CreateFrame("Frame", nil, UIParent)
@@ -129,10 +128,16 @@ function Notify.MissionDone(name)
             end
         end)
     end
-    toast.text:SetText("Mission complete: |cffffffff" .. name .. "|r")
+    toast.text:SetText(text)
     toast.t = 0
     toast:SetAlpha(1)
     toast:Show()
+end
+
+-- "Mission complete" alert plus a chat line.
+function Notify.MissionDone(name)
+    GE.Print("Mission complete: |cffffffff" .. name .. "|r. Open /gl missions to collect.")
+    Notify.Toast("Mission complete: |cffffffff" .. name .. "|r")
 end
 
 function Notify.XpGain(amount)
