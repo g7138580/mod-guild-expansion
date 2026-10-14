@@ -197,7 +197,7 @@ local function BuildCard(page, i)
     for r = 1, 3 do
         local b = UI.IconButton(card, 34)
         if r == 1 then
-            b:SetPoint("RIGHT", -150, 0)
+            b:SetPoint("TOPLEFT", card, "TOPRIGHT", -134, -30)
         else
             b:SetPoint("LEFT", card.rewards[r - 1], "RIGHT", 6, 0)
         end
@@ -205,8 +205,9 @@ local function BuildCard(page, i)
     end
     card.rewardLabel:SetPoint("BOTTOMLEFT", card.rewards[1], "TOPLEFT", 0, 4)
 
-    card.reroll = UI.Button(card, "Reroll", 90, 22)
-    card.reroll:SetPoint("RIGHT", -20, 0)
+    -- Bottom right corner, under the rewards.
+    card.reroll = UI.Button(card, "Reroll", 80, 20)
+    card.reroll:SetPoint("BOTTOMRIGHT", -12, 10)
     card.reroll:SetScript("OnClick", function()
         local c = card.contract
         if c then
@@ -228,7 +229,7 @@ local function BuildCard(page, i)
     card.reroll:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     card.doneText = card:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    card.doneText:SetPoint("RIGHT", -26, 0)
+    card.doneText:SetPoint("BOTTOMRIGHT", -16, 12)
     card.doneText:SetText("|cff80ff80Complete|r")
 
     card:Hide()
