@@ -90,6 +90,8 @@ struct GspeConfig
 
     // Quartermaster
     bool quartermasterEnable = true;
+    uint32 quartermasterWeeklyEpicChance = 15;       // percent
+    uint32 quartermasterCuriosityMountChance = 20;   // percent
 };
 
 #define sGspeConfig GspeConfig::instance()

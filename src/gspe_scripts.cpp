@@ -334,6 +334,8 @@ void Dispatch(Player* player, std::string_view request)
         sQuartermasterMgr->SendStock(player);
     else if (cmd == "QBUY")
         sQuartermasterMgr->HandleBuy(player, ArgAt<uint16>(args, 1));
+    else if (cmd == "QBUYW")
+        sQuartermasterMgr->HandleBuyWeekly(player, ArgAt<uint8>(args, 1));
 }
 } // namespace
 
@@ -392,6 +394,7 @@ public:
         sGuildProgressMgr->DeleteProgress(guild->GetId());
         sUnitMgr->OnGuildDisband(guild->GetId());
         sMissionMgr->OnGuildDisband(guild->GetId());
+        sQuartermasterMgr->OnGuildDisband(guild->GetId());
     }
 
     void OnAddMember(Guild* /*guild*/, Player* player, uint8& /*plRank*/) override

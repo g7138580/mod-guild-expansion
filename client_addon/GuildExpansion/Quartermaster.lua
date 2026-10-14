@@ -3,15 +3,20 @@
   Left: categories. Right: what the quartermaster sells in that category, for guild
   supplies. Rows unlock with guild level; consumables show the tier for the character's
   level. Services spend supplies on the guild's other systems (rerolls and the like).
+  Across the top: this week's stock, which changes at the weekly reset. Gear is rolled
+  for each character; the rest is shared by the guild and can be bought once.
 ]]
 
 local GE = GuildExpansion
 local UI = GE.UI
 
 local LEFT_WIDTH = 180
+local STRIP_HEIGHT = 142
 local ROW_WIDTH = 344
-local ROW_HEIGHT = 52
-local ROWS_PER_COLUMN = 9
+local ROW_HEIGHT = 50
+local ROWS_PER_COLUMN = 7
+local WEEKLY_SLOTS = 6
+local CARD_WIDTH = 144
 local PAGE_SIZE = ROWS_PER_COLUMN * 2
 
 local CATEGORIES = {
@@ -39,7 +44,13 @@ local STATE_TEXT = {
     [2] = "You can't use this",
     [3] = "Limit reached",
     [4] = "Nothing to do right now",
+    [5] = "Already known",
+    [6] = "Sold",
+    [7] = "Nothing this week",
 }
+
+-- Keep in sync with QuartermasterWeeklySlot.
+local WEEKLY_LABELS = { "Gear", "Gear", "Material", "Recipe", "Recipe", "Pet or Mount" }
 
 local selectedCategory = 1
 local pageIndex = 1
@@ -78,8 +89,12 @@ StaticPopupDialogs["GUILDEXPANSION_QM_BUY"] = {
     text = "Buy %s for %s guild supplies?",
     button1 = YES,
     button2 = NO,
-    OnAccept = function(self, rowId)
-        GE.Send("QBUY " .. rowId)
+    OnAccept = function(self, data)
+        if data.weekly then
+            GE.Send("QBUYW " .. data.id)
+        else
+            GE.Send("QBUY " .. data.id)
+        end
     end,
     timeout = 0,
     whileDead = true,
@@ -93,8 +108,144 @@ local function Buy(row)
     end
     local dialog = StaticPopup_Show("GUILDEXPANSION_QM_BUY", name, row.cost)
     if dialog then
-        dialog.data = row.id
+        dialog.data = { id = row.id }
     end
+end
+
+-- Weekly stock --------------------------------------------------------------------
+
+-- Link with the offer's random suffix, so the tooltip shows the exact item for sale.
+local function OfferLink(offer)
+    return string.format("item:%d:0:0:0:0:0:%d:%d:%d", offer.item, offer.randomProperty, offer.suffixFactor, UnitLevel("player"))
+end
+
+local function BuyWeekly(offer)
+    local name = GetItemInfo(offer.item) or "this"
+    if offer.count > 1 then
+        name = offer.count .. "x " .. name
+    end
+    local dialog = StaticPopup_Show("GUILDEXPANSION_QM_BUY", name, offer.cost)
+    if dialog then
+        dialog.data = { id = offer.slot, weekly = true }
+    end
+end
+
+local function BuildWeekly(page)
+    local ui = page.ui
+    local strip = UI.Inset(page.frame)
+    strip:SetPoint("TOPLEFT", 0, 0)
+    strip:SetPoint("TOPRIGHT", 0, 0)
+    strip:SetHeight(STRIP_HEIGHT)
+
+    local title = strip:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 12, -10)
+    title:SetText("This Week")
+    ui.weeklyReset = strip:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    ui.weeklyReset:SetPoint("LEFT", title, "RIGHT", 12, 0)
+    local note = strip:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    note:SetPoint("TOPRIGHT", -12, -14)
+    note:SetText("Gear is picked for you. Everything else is shared by the guild: one of each.")
+
+    ui.weekly = {}
+    for i = 1, WEEKLY_SLOTS do
+        local card = UI.ParchmentRow(strip, CARD_WIDTH, 100)
+        card:EnableMouse(false)
+        card:SetPoint("TOPLEFT", 10 + (i - 1) * (CARD_WIDTH + 4), -32)
+
+        card.label = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        card.label:SetPoint("TOPLEFT", 8, -7)
+        card.label:SetText(WEEKLY_LABELS[i])
+
+        card.icon = UI.IconButton(card, 34)
+        card.icon:SetPoint("TOPLEFT", 8, -22)
+        card.icon.tooltip = function()
+            local offer = card.offer
+            if not offer or offer.item == 0 then
+                GameTooltip:AddLine("Nothing this week")
+                return
+            end
+            GameTooltip:SetHyperlink(OfferLink(offer))
+            if offer.state == 6 and offer.buyer ~= "" then
+                GameTooltip:AddLine("Bought by " .. offer.buyer, 0.8, 0.8, 0.8)
+            end
+        end
+        card.icon:SetScript("OnClick", function()
+            local offer = card.offer
+            if offer and offer.item > 0 and IsModifiedClick("CHATLINK") then
+                local _, link = GetItemInfo(OfferLink(offer))
+                if link then
+                    ChatEdit_InsertLink(link)
+                end
+            end
+        end)
+
+        card.name = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        card.name:SetPoint("TOPLEFT", card.icon, "TOPRIGHT", 6, 0)
+        card.name:SetWidth(CARD_WIDTH - 58)
+        card.name:SetHeight(36)
+        card.name:SetJustifyH("LEFT")
+        card.name:SetJustifyV("TOP")
+
+        card.cost = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        card.cost:SetPoint("BOTTOMLEFT", 9, 11)
+        card.state = card:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        card.state:SetPoint("BOTTOMRIGHT", -9, 11)
+
+        card.buy = UI.Button(card, "Buy", 50, 18)
+        card.buy:SetPoint("BOTTOMRIGHT", -6, 7)
+        card.buy:SetScript("OnClick", function()
+            if card.offer then
+                BuyWeekly(card.offer)
+            end
+        end)
+        ui.weekly[i] = card
+    end
+end
+
+local function RefreshWeekly(page)
+    local ui = page.ui
+    local supplies = GE.state and GE.state.supplies or 0
+    local missing = false
+    ui.weeklyReset:SetText("New stock in |cffffffff" .. UI.FormatDuration(GE.qmInfo.weeklyResetsAt - GetTime()) .. "|r")
+
+    for i, card in ipairs(ui.weekly) do
+        local offer = GE.qmWeekly[i]
+        card.offer = offer
+        if offer and offer.item > 0 then
+            local name, _, quality = GetItemInfo(offer.item)
+            if not name then
+                GE.CacheItem(offer.item)
+                missing = true
+            end
+            card.icon.icon:SetTexture(GE.ItemIcon(offer.item))
+            card.icon.count:SetText(offer.count > 1 and offer.count or "")
+            UI.SetBorderQuality(card.icon, quality)
+            card.name:SetText("|cff" .. GE.QualityHex(quality or 1) .. (name or "Loading...") .. "|r")
+            card.icon.icon:SetDesaturated(offer.state ~= 0)
+
+            local affordable = supplies >= offer.cost
+            card.cost:SetText((affordable and "|cffffd200" or "|cffff4040") .. offer.cost
+                .. "|r |TInterface\\Icons\\INV_Crate_01:12:12:0:0|t")
+            if offer.state == 0 then
+                card.state:SetText("")
+                card.buy:Show()
+                if affordable then card.buy:Enable() else card.buy:Disable() end
+            else
+                card.buy:Hide()
+                card.state:SetText("|cffff4040" .. (STATE_TEXT[offer.state] or "") .. "|r")
+            end
+        else
+            card.icon.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+            card.icon.icon:SetDesaturated(true)
+            card.icon.count:SetText("")
+            UI.SetBorderQuality(card.icon, nil)
+            card.name:SetText("|cff808080Nothing this week|r")
+            card.cost:SetText("")
+            card.state:SetText("")
+            card.buy:Hide()
+        end
+    end
+    return missing
 end
 
 -- Categories ---------------------------------------------------------------------
@@ -102,7 +253,7 @@ end
 local function BuildCategories(page)
     local ui = page.ui
     local left = UI.Inset(page.frame)
-    left:SetPoint("TOPLEFT", 0, 0)
+    left:SetPoint("TOPLEFT", 0, -(STRIP_HEIGHT + 6))
     left:SetPoint("BOTTOMLEFT", 0, 0)
     left:SetWidth(LEFT_WIDTH)
 
@@ -218,7 +369,7 @@ end
 local function BuildList(page)
     local ui = page.ui
     local right = UI.Inset(page.frame)
-    right:SetPoint("TOPLEFT", LEFT_WIDTH + 8, 0)
+    right:SetPoint("TOPLEFT", LEFT_WIDTH + 8, -(STRIP_HEIGHT + 6))
     right:SetPoint("BOTTOMRIGHT", 0, 0)
 
     ui.listTitle = right:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
@@ -333,6 +484,7 @@ end
 
 local function Build(page)
     page.ui = {}
+    BuildWeekly(page)
     BuildCategories(page)
     BuildList(page)
 
@@ -344,9 +496,18 @@ local function Build(page)
     local elapsedSince = 0
     page.frame:SetScript("OnUpdate", function(self, elapsed)
         elapsedSince = elapsedSince + elapsed
-        if elapsedSince >= 1 and page.missingNames then
-            elapsedSince = 0
+        if elapsedSince < 1 then
+            return
+        end
+        elapsedSince = 0
+        if GE.qmInfo.status == 0 and GE.qmInfo.weeklyResetsAt > 0 and GE.qmInfo.weeklyResetsAt <= GetTime() then
+            GE.qmInfo.weeklyResetsAt = GetTime() + 30
+            GE.Send("QM")
+        end
+        if page.missingNames then
             page.refresh(page)
+        else
+            page.ui.weeklyReset:SetText("New stock in |cffffffff" .. UI.FormatDuration(GE.qmInfo.weeklyResetsAt - GetTime()) .. "|r")
         end
     end)
 end
@@ -354,6 +515,9 @@ end
 local function Refresh(page)
     RefreshCategories(page)
     RefreshList(page)
+    if RefreshWeekly(page) then
+        page.missingNames = true
+    end
 end
 
 UI.RegisterPage("quartermaster", "Quartermaster", "Guild Quartermaster", Build, Refresh)

@@ -85,4 +85,6 @@ void GspeConfig::Load()
     contractBonusSuppliesPerLevel = std::max(0.0f, sConfigMgr->GetOption<float>("GuildExpansion.Contracts.BonusSuppliesPerLevel", 0.5f));
 
     quartermasterEnable = sConfigMgr->GetOption<bool>("GuildExpansion.Quartermaster.Enable", true);
+    quartermasterWeeklyEpicChance = std::min<uint32>(100, sConfigMgr->GetOption<uint32>("GuildExpansion.Quartermaster.WeeklyEpicChance", 15));
+    quartermasterCuriosityMountChance = std::min<uint32>(100, sConfigMgr->GetOption<uint32>("GuildExpansion.Quartermaster.CuriosityMountChance", 20));
 }

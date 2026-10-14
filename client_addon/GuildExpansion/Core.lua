@@ -7,7 +7,7 @@
     PLACED\torderId\ttotal | DONE\torderId\tgold\tguildXp\tsupplies
     CB\tcount\tstatus\tresetsIn\trerollsLeft\tbonusPaid\tbonusSupplies\tdone, C\t..., CE   contracts
     CP\tslot\tprogress\tneeded\tlabel | CDONE\tslot\tgold\tsupplies\tguildXp\ttitle | CBONUS\tsupplies\titem\tcount
-    QB\tstatus\tguildLevel, QT\t..., QE   quartermaster stock | QBOUGHT\trowId
+    QB\tstatus\tguildLevel\tweeklyResetsIn, QT\t..., QW\t..., QE   quartermaster stock | QBOUGHT\trowId
   Requests are whispered to ourselves ("GSPE", "<command> <args>"); the server swallows them.
 ]]
 
@@ -36,7 +36,8 @@ GE.lastResult = nil     -- last collected mission result
 GE.contracts = {}       -- today's contracts, in slot order
 GE.contractInfo = { status = 0, resetsAt = 0, rerollsLeft = 0, bonusPaid = false, bonusSupplies = 0, done = 0 }
 GE.qmStock = {}         -- quartermaster rows shown to this character
-GE.qmInfo = { status = 0, guildLevel = 0 }
+GE.qmInfo = { status = 0, guildLevel = 0, weeklyResetsAt = 0 }
+GE.qmWeekly = {}        -- this week's offers, by slot (1-2 gear, 3 material, 4-5 recipes, 6 pet or mount)
 
 local DEFAULT_OPTIONS = {
     xpText = true,
@@ -50,6 +51,7 @@ local pendingUnits
 local pendingMissions
 local pendingContracts
 local pendingStock
+local pendingWeekly
 local hadSnapshotThisSession = false
 local lastPull = 0
 
@@ -488,8 +490,12 @@ local function OnLine(line)
     elseif cmd == "CBONUS" then
         GE.Notify.Toast("All of today's contracts complete!", "Sound\\Interface\\LevelUp.wav")
     elseif cmd == "QB" then
-        pendingStock = {}
-        GE.qmInfo = { status = tonumber(fields[3]) or 0, guildLevel = tonumber(fields[4]) or 0 }
+        pendingStock, pendingWeekly = {}, {}
+        GE.qmInfo = {
+            status = tonumber(fields[3]) or 0,
+            guildLevel = tonumber(fields[4]) or 0,
+            weeklyResetsAt = GetTime() + (tonumber(fields[5]) or 0),
+        }
     elseif cmd == "QT" then
         if pendingStock then
             pendingStock[#pendingStock + 1] = {
@@ -505,9 +511,24 @@ local function OnLine(line)
                 state = tonumber(fields[12]) or 0,
             }
         end
+    elseif cmd == "QW" then
+        if pendingWeekly then
+            local slot = tonumber(fields[3]) or 0
+            pendingWeekly[slot] = {
+                slot = slot,
+                item = tonumber(fields[4]) or 0,
+                count = tonumber(fields[5]) or 1,
+                cost = tonumber(fields[6]) or 0,
+                state = tonumber(fields[7]) or 7,
+                randomProperty = tonumber(fields[8]) or 0,
+                suffixFactor = tonumber(fields[9]) or 0,
+                buyer = fields[10] or "",
+            }
+        end
     elseif cmd == "QE" then
         GE.qmStock = pendingStock or {}
-        pendingStock = nil
+        GE.qmWeekly = pendingWeekly or {}
+        pendingStock, pendingWeekly = nil, nil
         Fire("quartermaster")
     elseif cmd == "QBOUGHT" then
         PlaySound("LOOTWINDOWCOINSOUND")

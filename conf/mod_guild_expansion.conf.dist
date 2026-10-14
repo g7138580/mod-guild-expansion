@@ -181,3 +181,8 @@ GuildExpansion.Contracts.BonusSuppliesPerLevel = 0.5
 # Sells bags, fishing poles, consumables and services for guild supplies. The stock is
 # in the world DB table mod_gspe_qm_stock.
 GuildExpansion.Quartermaster.Enable = 1
+
+# Weekly stock: chance (percent) that a weekly gear piece is epic instead of rare, and
+# that the weekly pet-or-mount slot holds a mount.
+GuildExpansion.Quartermaster.WeeklyEpicChance = 15
+GuildExpansion.Quartermaster.CuriosityMountChance = 20

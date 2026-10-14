@@ -6,6 +6,7 @@
 #include "GspeContracts.h"
 #include "GspeMissions.h"
 #include "GspeProgress.h"
+#include "GspeQuartermaster.h"
 #include "GspeUnits.h"
 #include "GspeWorkOrders.h"
 
@@ -62,6 +63,7 @@ public:
             { "finish",   HandleFinish,   SEC_ADMINISTRATOR, Console::No },
             { "contracts", HandleContracts, SEC_ADMINISTRATOR, Console::No },
             { "contract", HandleContract, SEC_ADMINISTRATOR, Console::No },
+            { "weekly",   HandleWeekly,   SEC_ADMINISTRATOR, Console::No },
             { "",         HandleInfo,     SEC_GAMEMASTER,    Console::No },
         };
 
@@ -195,6 +197,17 @@ public:
         if (!target || !number)
             return false;
         sContractMgr->FinishContract(target, number - 1);
+        return true;
+    }
+
+    // Rolls the quartermaster's weekly stock again for the guild and the character.
+    static bool HandleWeekly(ChatHandler* handler)
+    {
+        Player* target = handler->getSelectedPlayerOrSelf();
+        if (!target)
+            return false;
+        sQuartermasterMgr->RerollWeekly(target);
+        handler->SendSysMessage(Acore::StringFormat("GuildExpansion: new weekly stock for {}.", target->GetName()));
         return true;
     }
 };
