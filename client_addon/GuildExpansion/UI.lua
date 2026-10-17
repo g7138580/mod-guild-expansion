@@ -341,6 +341,10 @@ local function BuildFrame()
     end)
     supplies:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+    local options = UI.Button(frame, "Options", 72, 22)
+    options:SetPoint("RIGHT", supplies, "LEFT", -6, 0)
+    options:SetScript("OnClick", function() GE.OpenOptions() end)
+
     for i, page in ipairs(pages) do
         page.frame = CreateFrame("Frame", nil, frame)
         page.frame:SetPoint("TOPLEFT", 18, -44)
@@ -378,6 +382,13 @@ function UI.Toggle()
         frame:Hide()
     else
         UI.Show()
+    end
+end
+
+function UI.ResetPosition()
+    if frame then
+        frame:ClearAllPoints()
+        frame:SetPoint("CENTER", 0, 20)
     end
 end
 
@@ -433,6 +444,24 @@ local function BuildGuildTab()
     tab:SetScript("OnLeave", function() GameTooltip:Hide() end)
 end
 
+-- The side tab can be turned off in the options.
+local function ApplyGuildTab()
+    if GE.Options().guildTab then
+        BuildGuildTab()
+        if GuildExpansionGuildTab then
+            GuildExpansionGuildTab:Show()
+        end
+    elseif GuildExpansionGuildTab then
+        GuildExpansionGuildTab:Hide()
+    end
+end
+
+GE.RegisterListener(function(event)
+    if event == "state" then
+        ApplyGuildTab()
+    end
+end)
+
 local loginFrame = CreateFrame("Frame")
 loginFrame:RegisterEvent("PLAYER_LOGIN")
-loginFrame:SetScript("OnEvent", BuildGuildTab)
+loginFrame:SetScript("OnEvent", ApplyGuildTab)

@@ -1,0 +1,5 @@
+<Bindings>
+	<Binding name="GUILDEXPANSION_TOGGLE" header="GUILDEXPANSION">
+		GuildExpansion.UI.Toggle()
+	</Binding>
+</Bindings>

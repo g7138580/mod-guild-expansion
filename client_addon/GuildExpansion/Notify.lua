@@ -109,6 +109,9 @@ local toast
 
 -- Alert near the top of the screen (mission or contract complete).
 function Notify.Toast(text, sound)
+    if not GE.Options().toasts then
+        return
+    end
     PlaySoundFile(sound or "Sound\\Interface\\iQuestComplete.wav")
 
     if not toast then

@@ -48,7 +48,19 @@ local DEFAULT_OPTIONS = {
     minimapAngle = 200,
     contractNotice = true,      -- chat line when a new day's contracts arrive
     contractProgress = true,    -- on-screen progress text like quest objectives
+    toasts = true,              -- "Mission complete" / "Contract complete" alerts
+    guildTab = true,            -- side tab on the Guild frame
 }
+
+GE.DEFAULT_KEY = "SHIFT-G"
+BINDING_HEADER_GUILDEXPANSION = "Guild Expansion"
+BINDING_NAME_GUILDEXPANSION_TOGGLE = "Open or close the Guild Expansion window"
+
+-- The key that opens the window, as the client shows it ("SHIFT-G"), or nil.
+function GE.KeyText()
+    local key = GetBindingKey("GUILDEXPANSION_TOGGLE")
+    return key and GetBindingText(key, "KEY_") or nil
+end
 
 local listeners = {}
 local pendingOrders
@@ -626,6 +638,15 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         GuildExpansionCharSaved = GuildExpansionCharSaved or {}
         GE.state = GuildExpansionCharSaved.last
     elseif event == "PLAYER_LOGIN" then
+        -- Shift-G opens the window, the first time only and only when nothing else has the key.
+        if not GuildExpansionSaved.boundKey then
+            GuildExpansionSaved.boundKey = true
+            local action = GetBindingAction(GE.DEFAULT_KEY)
+            if not action or action == "" then
+                SetBinding(GE.DEFAULT_KEY, "GUILDEXPANSION_TOGGLE")
+                SaveBindings(GetCurrentBindingSet())
+            end
+        end
         Fire("state")
         GE.RequestSync(true)
         -- The summary (Guild tab and minimap button) needs contracts, missions and the
@@ -654,6 +675,9 @@ local function PrintHelp()
     DEFAULT_CHAT_FRAME:AddMessage("  /gl guild - open the Guild tab (level and perks)")
     DEFAULT_CHAT_FRAME:AddMessage("  /gl scale 0.9 - change the window size (0.6 to 1.4)")
     DEFAULT_CHAT_FRAME:AddMessage("  /gl bank - use Mobile Banking")
+    DEFAULT_CHAT_FRAME:AddMessage("  /gl options - open the options")
+    DEFAULT_CHAT_FRAME:AddMessage("  /gl minimap - show or hide the minimap button")
+    DEFAULT_CHAT_FRAME:AddMessage("  /gl reset - move the window back to the middle of the screen")
     DEFAULT_CHAT_FRAME:AddMessage("  /gl refresh - ask the server for fresh data")
 end
 
@@ -683,6 +707,14 @@ SlashCmdList["GUILDEXPANSION"] = function(input)
         GE.Print("window size is " .. GE.Options().scale .. " (use /gl scale 0.6 to 1.4).")
     elseif cmd == "bank" then
         GE.Send("USE BANK")
+    elseif cmd == "options" or cmd == "config" then
+        GE.OpenOptions()
+    elseif cmd == "minimap" then
+        GE.SetOption("minimapButton", not GE.Options().minimapButton)
+        GE.Print("minimap button " .. (GE.Options().minimapButton and "shown." or "hidden."))
+    elseif cmd == "reset" then
+        GE.UI.ResetPosition()
+        GE.Print("window position reset.")
     elseif cmd == "refresh" or cmd == "pull" then
         GE.RequestSync(true)
     else

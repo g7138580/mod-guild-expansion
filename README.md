@@ -33,7 +33,7 @@ This module replaces mod-guild-levels. Do not run both. Existing guild levels fr
 
 ## Usage
 
-Open the window from the tab on the side of the Guild window (Social > Guild), or type `/gl`.
+Open the window with Shift-G (if the key was free), the minimap button, the tab on the side of the Guild window (Social > Guild), or `/gl`. Options are under Interface > AddOns > Guild Expansion, or `/gl options`.
 
 | Command | Opens |
 |---|---|

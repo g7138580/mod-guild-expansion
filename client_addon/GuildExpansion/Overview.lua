@@ -1,9 +1,9 @@
---[[ Guild Expansion: Guild page: level, experience, what's ready, perks by tier, and options ]]
+--[[ Guild Expansion: Guild page: level, experience, what's ready, and perks by tier ]]
 
 local GE = GuildExpansion
 local UI = GE.UI
 
-local ROW_HEIGHT = 41
+local ROW_HEIGHT = 44
 local PER_COLUMN = 9
 local TOP_HEIGHT = 130
 
@@ -86,7 +86,7 @@ local function Build(page)
     -- Perks, two columns of tiers.
     local perks = UI.Inset(p)
     perks:SetPoint("TOPLEFT", top, "BOTTOMLEFT", 0, -8)
-    perks:SetPoint("BOTTOMRIGHT", 0, 38)
+    perks:SetPoint("BOTTOMRIGHT", 0, 0)
     local header = perks:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     header:SetPoint("TOPLEFT", 14, -12)
     header:SetText("Guild Perks")
@@ -136,50 +136,6 @@ local function Build(page)
         ui.rows[i] = row
     end
 
-    -- Options, in a small panel above the Options button.
-    local options = UI.Inset(p)
-    options:SetWidth(250)
-    options:SetFrameLevel(p:GetFrameLevel() + 20)
-    options:SetBackdropColor(0.05, 0.04, 0.02, 0.97)
-    options:EnableMouse(true)
-    options:Hide()
-    local optionsTitle = options:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    optionsTitle:SetPoint("TOPLEFT", 12, -10)
-    optionsTitle:SetText("Options")
-
-    local checks = {
-        { "Level-up alerts", "levelAlert" },
-        { "Show guild XP gains", "xpText" },
-        { "Show what's ready on this tab", "summary" },
-        { "Minimap button", "minimapButton" },
-        { "Announce new contracts in chat", "contractNotice" },
-        { "Show contract progress on screen", "contractProgress" },
-    }
-    for i, def in ipairs(checks) do
-        local cb = CreateFrame("CheckButton", nil, options, "UICheckButtonTemplate")
-        cb:SetWidth(24)
-        cb:SetHeight(24)
-        cb:SetPoint("TOPLEFT", 8, -26 - (i - 1) * 24)
-        local text = cb:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        text:SetPoint("LEFT", cb, "RIGHT", 2, 0)
-        text:SetText(def[1])
-        cb:SetScript("OnShow", function(self) self:SetChecked(GE.Options()[def[2]]) end)
-        cb:SetScript("OnClick", function(self) GE.SetOption(def[2], self:GetChecked() and true or false) end)
-    end
-    options:SetHeight(34 + #checks * 24)
-
-    local optionsButton = UI.Button(p, "Options", 90, 22)
-    optionsButton:SetPoint("BOTTOMLEFT", 4, 8)
-    optionsButton:SetScript("OnClick", function()
-        if options:IsShown() then
-            options:Hide()
-        else
-            options:Show()
-        end
-    end)
-    options:SetPoint("BOTTOMLEFT", optionsButton, "TOPLEFT", 0, 4)
-    p:HookScript("OnHide", function() options:Hide() end)
-
     -- "Work orders ready" follows the bags.
     p:RegisterEvent("BAG_UPDATE")
     p:SetScript("OnEvent", function()
@@ -187,16 +143,6 @@ local function Build(page)
             page.refresh(page)
         end
     end)
-
-    local scaleLabel = p:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    scaleLabel:SetPoint("BOTTOMRIGHT", -110, 12)
-    scaleLabel:SetText("Window size")
-    local smaller = UI.Button(p, "-", 40, 22)
-    smaller:SetPoint("BOTTOMRIGHT", -56, 8)
-    smaller:SetScript("OnClick", function() GE.SetScale((GE.Options().scale or 1) - 0.05) end)
-    local bigger = UI.Button(p, "+", 40, 22)
-    bigger:SetPoint("BOTTOMRIGHT", -10, 8)
-    bigger:SetScript("OnClick", function() GE.SetScale((GE.Options().scale or 1) + 0.05) end)
 end
 
 local function Refresh(page)

@@ -17,4 +17,5 @@ WorkOrders.lua
 Contracts.lua
 Quartermaster.lua
 Overview.lua
+Options.lua
 Minimap.lua

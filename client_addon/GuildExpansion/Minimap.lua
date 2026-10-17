@@ -1,19 +1,19 @@
 --[[
   Guild Expansion: minimap button.
-  Left-click opens the window, right-click opens Contracts, drag moves it around the
-  minimap. The tooltip shows the guild's level and what's ready. Turned on and off from
-  the options on the Guild tab.
+  Left-click opens the window, right-click opens the options, drag moves it around the
+  minimap's edge. The tooltip shows the guild's level and what's ready.
 ]]
 
 local GE = GuildExpansion
 
-local RADIUS = 80
 local button
 
+-- On the minimap's edge, whatever its size (ElvUI and others resize it).
 local function UpdatePosition()
     local angle = math.rad(GE.Options().minimapAngle or 200)
+    local radius = (Minimap:GetWidth() / 2) + 10
     button:ClearAllPoints()
-    button:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * RADIUS, math.sin(angle) * RADIUS)
+    button:SetPoint("CENTER", Minimap, "CENTER", math.cos(angle) * radius, math.sin(angle) * radius)
 end
 
 local function ShowTooltip(self)
@@ -40,7 +40,9 @@ local function ShowTooltip(self)
         GameTooltip:AddDoubleLine("Guild supplies", GE.FormatNumber(st.supplies), 1, 0.82, 0, 1, 1, 1)
     end
     GameTooltip:AddLine(" ")
-    GameTooltip:AddLine("Left-click to open, right-click for contracts. Drag to move.", 0, 1, 0, true)
+    local key = GE.KeyText()
+    GameTooltip:AddLine("Click to open" .. (key and (" (" .. key .. ")") or "") .. ", right-click for options, drag to move.",
+        0.6, 0.6, 0.6, true)
     GameTooltip:Show()
 end
 
@@ -78,7 +80,7 @@ local function Build()
 
     button:SetScript("OnClick", function(self, mouse)
         if mouse == "RightButton" then
-            GE.UI.Show("contracts")
+            GE.OpenOptions()
         else
             GE.UI.Toggle()
         end
@@ -109,6 +111,7 @@ local function Apply()
             Build()
         end
         button:Show()
+        UpdatePosition()
     elseif button then
         button:Hide()
     end
