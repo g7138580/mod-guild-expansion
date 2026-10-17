@@ -566,6 +566,19 @@ void WorkOrderMgr::HandleFill(Player* player, uint32 orderId)
     std::vector<Placement>& placed = co->placements[orderId];
     uint32 total = ValidatePlacements(player, *order, placed);
 
+    // Items looted after a partial fill stack onto the stacks already placed: use those first.
+    for (Placement& p : placed)
+    {
+        if (total >= order->quantity)
+            break;
+        if (Item* item = player->GetItemByGuid(p.item); item && item->GetCount() > p.count)
+        {
+            uint32 const add = std::min(item->GetCount() - p.count, order->quantity - total);
+            p.count += add;
+            total += add;
+        }
+    }
+
     auto isPlacedAnywhere = [co](ObjectGuid guid)
     {
         for (auto const& [id, list] : co->placements)
