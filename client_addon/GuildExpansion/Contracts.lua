@@ -317,7 +317,7 @@ local function Build(page)
         GE.Send("CONTRACTS")
     end)
 
-    -- Keep the reset timer current, and fetch the new day's contracts after the reset.
+    -- Keep the reset timer current (Core fetches the new day's contracts after the reset).
     local elapsedSince = 0
     page.frame:SetScript("OnUpdate", function(self, elapsed)
         elapsedSince = elapsedSince + elapsed
@@ -325,10 +325,6 @@ local function Build(page)
             return
         end
         elapsedSince = 0
-        if GE.contractInfo.status == 0 and #GE.contracts > 0 and GE.contractInfo.resetsAt <= GetTime() then
-            GE.contractInfo.resetsAt = GetTime() + 30
-            GE.Send("CONTRACTS")
-        end
         RefreshHeader(page)
     end)
 end

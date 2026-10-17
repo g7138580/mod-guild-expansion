@@ -427,7 +427,7 @@ local function BuildGuildTab()
                 GameTooltip:AddLine(string.format("%.0f%% to level %d", pct, st.level + 1), 0.8, 0.8, 0.8)
             end
         end
-        GameTooltip:AddLine("Click to open missions, units, work orders and perks.", 0, 1, 0, true)
+        GameTooltip:AddLine("Click to open missions, units, work orders, contracts, the quartermaster and perks.", 0, 1, 0, true)
         GameTooltip:Show()
     end)
     tab:SetScript("OnLeave", function() GameTooltip:Hide() end)

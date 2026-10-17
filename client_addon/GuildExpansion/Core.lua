@@ -43,6 +43,11 @@ local DEFAULT_OPTIONS = {
     xpText = true,
     levelAlert = true,
     scale = 1,
+    summary = true,             -- "what's ready" row on the Guild tab
+    minimapButton = true,
+    minimapAngle = 200,
+    contractNotice = true,      -- chat line when a new day's contracts arrive
+    contractProgress = true,    -- on-screen progress text like quest objectives
 }
 
 local listeners = {}
@@ -306,6 +311,64 @@ function GE.RequestUnits()
     GE.Send("UNITS")
 end
 
+-- What needs attention: contracts done, missions ready to collect, work orders with
+-- enough items in the bags, and when the weekly stock changes.
+function GE.Summary()
+    local now = GetTime()
+    local s = {
+        contractsDone = 0, contractsTotal = #GE.contracts, bonusPaid = GE.contractInfo.bonusPaid,
+        missionsReady = 0, missionsRunning = 0, ordersReady = 0, ordersOpen = 0,
+        weeklyResetsAt = GE.qmInfo.weeklyResetsAt,
+    }
+    for _, c in ipairs(GE.contracts) do
+        if c.done then
+            s.contractsDone = s.contractsDone + 1
+        end
+    end
+    for _, m in ipairs(GE.running) do
+        if m.endsAt <= now then
+            s.missionsReady = s.missionsReady + 1
+        else
+            s.missionsRunning = s.missionsRunning + 1
+        end
+    end
+    for _, o in ipairs(GE.orders) do
+        if o.item > 0 then
+            s.ordersOpen = s.ordersOpen + 1
+            if GetItemCount(o.item) >= o.quantity then
+                s.ordersReady = s.ordersReady + 1
+            end
+        end
+    end
+    return s
+end
+
+-- Chat line the first time this character sees a new day's contracts.
+local function NoticeNewContracts()
+    local info = GE.contractInfo
+    if info.status ~= 0 or #GE.contracts == 0 then
+        return
+    end
+    -- The reset time as a wall-clock hour identifies the day.
+    local day = math.floor((time() + (info.resetsAt - GetTime()) + 1800) / 3600)
+    if GuildExpansionCharSaved.contractDay == day then
+        return
+    end
+    GuildExpansionCharSaved.contractDay = day
+    if not GE.Options().contractNotice then
+        return
+    end
+    local titles = {}
+    for _, c in ipairs(GE.contracts) do
+        if not c.done then
+            titles[#titles + 1] = c.title
+        end
+    end
+    if #titles > 0 then
+        GE.Print("New daily contracts: |cffffffff" .. table.concat(titles, ", ") .. "|r. Type /gl contracts.")
+    end
+end
+
 local function OnLine(line)
     local fields = { strsplit("\t", line) }
     if fields[1] ~= PREFIX then
@@ -476,6 +539,7 @@ local function OnLine(line)
     elseif cmd == "CE" then
         GE.contracts = pendingContracts or {}
         pendingContracts = nil
+        NoticeNewContracts()
         Fire("contracts")
     elseif cmd == "CP" then
         local c = GE.FindContract(tonumber(fields[3]) or -1)
@@ -484,7 +548,9 @@ local function OnLine(line)
             Fire("contracts")
         end
         -- Shown like a quest objective update.
-        UIErrorsFrame:AddMessage(string.format("%s: %s/%s", fields[6] or "", fields[4] or "0", fields[5] or "0"), 1.0, 1.0, 0.0, 1.0)
+        if GE.Options().contractProgress then
+            UIErrorsFrame:AddMessage(string.format("%s: %s/%s", fields[6] or "", fields[4] or "0", fields[5] or "0"), 1.0, 1.0, 0.0, 1.0)
+        end
     elseif cmd == "CDONE" then
         GE.Notify.Toast("Contract complete: |cffffffff" .. (fields[7] or "") .. "|r")
     elseif cmd == "CBONUS" then
@@ -562,6 +628,11 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_LOGIN" then
         Fire("state")
         GE.RequestSync(true)
+        -- The summary (Guild tab and minimap button) needs contracts, missions and the
+        -- weekly stock time without the tabs being opened first.
+        GE.Send("CONTRACTS")
+        GE.RequestMissions()
+        GE.Send("QM")
     elseif event == "PLAYER_GUILD_UPDATE" then
         GE.RequestSync()
     elseif event == "CHAT_MSG_ADDON" then
@@ -618,3 +689,19 @@ SlashCmdList["GUILDEXPANSION"] = function(input)
         PrintHelp()
     end
 end
+
+-- At the daily reset, fetch the new day's contracts (also while the window is closed).
+local resetWatcher = CreateFrame("Frame")
+local resetElapsed = 0
+resetWatcher:SetScript("OnUpdate", function(self, elapsed)
+    resetElapsed = resetElapsed + elapsed
+    if resetElapsed < 5 then
+        return
+    end
+    resetElapsed = 0
+    local info = GE.contractInfo
+    if info.status == 0 and #GE.contracts > 0 and info.resetsAt <= GetTime() then
+        info.resetsAt = GetTime() + 60
+        GE.Send("CONTRACTS")
+    end
+end)

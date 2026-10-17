@@ -1,10 +1,11 @@
---[[ Guild Expansion: Guild page: level, experience, and perks by tier ]]
+--[[ Guild Expansion: Guild page: level, experience, what's ready, perks by tier, and options ]]
 
 local GE = GuildExpansion
 local UI = GE.UI
 
-local ROW_HEIGHT = 44
+local ROW_HEIGHT = 41
 local PER_COLUMN = 9
+local TOP_HEIGHT = 130
 
 local function ShowPerkTooltip(owner, perk)
     local st = GE.state
@@ -32,7 +33,7 @@ local function Build(page)
     local top = UI.Inset(p)
     top:SetPoint("TOPLEFT", 0, 0)
     top:SetPoint("TOPRIGHT", 0, 0)
-    top:SetHeight(100)
+    top:SetHeight(TOP_HEIGHT)
     top:SetBackdropColor(0.12, 0.09, 0.05, 0.85)
 
     ui.guildName = top:CreateFontString(nil, "OVERLAY", "GameFontNormalHuge")
@@ -56,6 +57,31 @@ local function Build(page)
     ui.bar.bg:SetTexture(0, 0, 0, 0.7)
     ui.bar.text = ui.bar:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     ui.bar.text:SetPoint("CENTER")
+
+    -- What's ready: contracts, missions, work orders, weekly stock. Each opens its tab.
+    ui.chips = {}
+    local chipDefs = {
+        { page = "contracts", icon = "INV_Misc_Note_01" },
+        { page = "missions", icon = "INV_Misc_Map_01" },
+        { page = "orders", icon = "INV_Hammer_20" },
+        { page = "quartermaster", icon = "INV_Crate_01" },
+    }
+    for i, def in ipairs(chipDefs) do
+        local chip = CreateFrame("Button", nil, top)
+        chip:SetWidth(205)
+        chip:SetHeight(22)
+        chip:SetPoint("TOPLEFT", 20 + (i - 1) * 212, -66)
+        chip:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+        chip.icon = chip:CreateTexture(nil, "ARTWORK")
+        chip.icon:SetWidth(18)
+        chip.icon:SetHeight(18)
+        chip.icon:SetPoint("LEFT", 0, 0)
+        chip.icon:SetTexture("Interface\\Icons\\" .. def.icon)
+        chip.text = chip:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        chip.text:SetPoint("LEFT", chip.icon, "RIGHT", 6, 0)
+        chip:SetScript("OnClick", function() GE.UI.Show(def.page) end)
+        ui.chips[i] = chip
+    end
 
     -- Perks, two columns of tiers.
     local perks = UI.Inset(p)
@@ -110,20 +136,57 @@ local function Build(page)
         ui.rows[i] = row
     end
 
-    -- Options.
-    local function Check(label, key, x)
-        local cb = CreateFrame("CheckButton", nil, p, "UICheckButtonTemplate")
+    -- Options, in a small panel above the Options button.
+    local options = UI.Inset(p)
+    options:SetWidth(250)
+    options:SetFrameLevel(p:GetFrameLevel() + 20)
+    options:SetBackdropColor(0.05, 0.04, 0.02, 0.97)
+    options:EnableMouse(true)
+    options:Hide()
+    local optionsTitle = options:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    optionsTitle:SetPoint("TOPLEFT", 12, -10)
+    optionsTitle:SetText("Options")
+
+    local checks = {
+        { "Level-up alerts", "levelAlert" },
+        { "Show guild XP gains", "xpText" },
+        { "Show what's ready on this tab", "summary" },
+        { "Minimap button", "minimapButton" },
+        { "Announce new contracts in chat", "contractNotice" },
+        { "Show contract progress on screen", "contractProgress" },
+    }
+    for i, def in ipairs(checks) do
+        local cb = CreateFrame("CheckButton", nil, options, "UICheckButtonTemplate")
         cb:SetWidth(24)
         cb:SetHeight(24)
-        cb:SetPoint("BOTTOMLEFT", x, 6)
+        cb:SetPoint("TOPLEFT", 8, -26 - (i - 1) * 24)
         local text = cb:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         text:SetPoint("LEFT", cb, "RIGHT", 2, 0)
-        text:SetText(label)
-        cb:SetScript("OnShow", function(self) self:SetChecked(GE.Options()[key]) end)
-        cb:SetScript("OnClick", function(self) GE.SetOption(key, self:GetChecked() and true or false) end)
+        text:SetText(def[1])
+        cb:SetScript("OnShow", function(self) self:SetChecked(GE.Options()[def[2]]) end)
+        cb:SetScript("OnClick", function(self) GE.SetOption(def[2], self:GetChecked() and true or false) end)
     end
-    Check("Level-up alerts", "levelAlert", 4)
-    Check("Show guild XP gains", "xpText", 150)
+    options:SetHeight(34 + #checks * 24)
+
+    local optionsButton = UI.Button(p, "Options", 90, 22)
+    optionsButton:SetPoint("BOTTOMLEFT", 4, 8)
+    optionsButton:SetScript("OnClick", function()
+        if options:IsShown() then
+            options:Hide()
+        else
+            options:Show()
+        end
+    end)
+    options:SetPoint("BOTTOMLEFT", optionsButton, "TOPLEFT", 0, 4)
+    p:HookScript("OnHide", function() options:Hide() end)
+
+    -- "Work orders ready" follows the bags.
+    p:RegisterEvent("BAG_UPDATE")
+    p:SetScript("OnEvent", function()
+        if p:IsShown() then
+            page.refresh(page)
+        end
+    end)
 
     local scaleLabel = p:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     scaleLabel:SetPoint("BOTTOMRIGHT", -110, 12)
@@ -168,6 +231,34 @@ local function Refresh(page)
         local nextPerk = GE.NextPerk(st.level)
         ui.nextPerk:SetText(nextPerk and string.format("Next perk at level %d: |cffffffff%s|r", nextPerk.lv, nextPerk.name)
             or "All perks unlocked")
+    end
+
+    -- What's ready.
+    local showSummary = st and GE.Options().summary
+    if showSummary then
+        local s = GE.Summary()
+        local green, white = "|cff80ff80", "|cffffffff"
+        local texts = {
+            s.contractsTotal > 0
+                and string.format("Contracts: %s%d / %d|r", s.contractsDone == s.contractsTotal and green or white,
+                    s.contractsDone, s.contractsTotal)
+                or "Contracts: |cffaaaaaa-|r",
+            s.missionsReady > 0
+                and string.format("Missions ready: %s%d|r", green, s.missionsReady)
+                or string.format("Missions running: %s%d|r", white, s.missionsRunning),
+            string.format("Work orders ready: %s%d|r of %d", s.ordersReady > 0 and green or white, s.ordersReady, s.ordersOpen),
+            s.weeklyResetsAt > GetTime()
+                and "New weekly stock in " .. white .. UI.FormatDuration(s.weeklyResetsAt - GetTime()) .. "|r"
+                or "Weekly stock",
+        }
+        for i, chip in ipairs(ui.chips) do
+            chip.text:SetText(texts[i])
+            chip:Show()
+        end
+    else
+        for _, chip in ipairs(ui.chips) do
+            chip:Hide()
+        end
     end
 
     local level = st and st.level or 0
