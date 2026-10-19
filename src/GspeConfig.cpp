@@ -20,6 +20,12 @@ void GspeConfig::Load()
     ignoreHeadlessPlayers = sConfigMgr->GetOption<bool>("GuildExpansion.IgnoreHeadlessPlayers", true);
 
     levelCurveMultiplier = std::max(0.01f, sConfigMgr->GetOption<float>("GuildExpansion.LevelCurveMultiplier", 0.35f));
+    maxGuildLevel = std::clamp<uint32>(sConfigMgr->GetOption<uint32>("GuildExpansion.Levels.Max", 250), 25, 250);
+    levelCostAfter25 = sConfigMgr->GetOption<uint32>("GuildExpansion.Levels.CostAfter25", 875000);
+    levelCostStep = sConfigMgr->GetOption<uint32>("GuildExpansion.Levels.CostStep", 25000);
+    levelSuppliesBase = sConfigMgr->GetOption<uint32>("GuildExpansion.Levels.SuppliesBase", 100);
+    levelSuppliesStep = sConfigMgr->GetOption<uint32>("GuildExpansion.Levels.SuppliesStep", 2);
+    levelCapstoneSupplies = sConfigMgr->GetOption<uint32>("GuildExpansion.Levels.CapstoneSupplies", 10000);
     xpKillPct = std::max(0.0f, sConfigMgr->GetOption<float>("GuildExpansion.Xp.KillPct", 0.08f));
     xpQuestPct = std::max(0.0f, sConfigMgr->GetOption<float>("GuildExpansion.Xp.QuestPct", 0.06f));
     xpKillFlat = sConfigMgr->GetOption<uint32>("GuildExpansion.Xp.KillFlat", 8);

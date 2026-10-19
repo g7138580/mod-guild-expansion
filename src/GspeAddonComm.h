@@ -22,7 +22,7 @@ constexpr char PREFIX[] = "GSPE";
 // Sends "GSPE\t<payload>". Dropped (and logged) if it would exceed 255 bytes.
 void Send(Player* player, std::string_view payload);
 
-// STATE\tlevel\txp\tprev\tnext\ttoday\tweek\tdailyCap\tweeklyCap\tsupplies\tguildId\tname
+// STATE\tlevel\txp\tprev\tnext\ttoday\tweek\tdailyCap\tweeklyCap\tsupplies\tmaxLevel\tguildId\tname
 void SendState(Player* player);
 void SendClear(Player* player);
 // ERROR\ttext: the add-on shows it like a failed spell cast.

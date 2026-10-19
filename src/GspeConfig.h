@@ -19,6 +19,12 @@ struct GspeConfig
 
     // Guild XP
     float levelCurveMultiplier = 0.35f;
+    uint32 maxGuildLevel = 250;
+    uint32 levelCostAfter25 = 875000;     // XP for level 26 is this plus one step
+    uint32 levelCostStep = 25000;         // each level after 25 costs this much more than the last
+    uint32 levelSuppliesBase = 100;       // supplies for each level after 25: base + step x (level - 25)
+    uint32 levelSuppliesStep = 2;
+    uint32 levelCapstoneSupplies = 10000; // extra supplies for reaching the maximum level
     float xpKillPct = 0.08f;
     float xpQuestPct = 0.06f;
     uint32 xpKillFlat = 8;

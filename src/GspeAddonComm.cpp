@@ -97,9 +97,9 @@ void SendState(Player* player)
         ? GuildProgressMgr::CumulativeXpForLevel(st.level + 1)
         : st.xp;
 
-    Send(player, Acore::StringFormat("STATE\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+    Send(player, Acore::StringFormat("STATE\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         uint32(st.level), st.xp, prevXp, nextXp, st.todayXp, st.weekXp,
-        sGspeConfig->dailyXpCap, sGspeConfig->weeklyXpCap, st.supplies,
+        sGspeConfig->dailyXpCap, sGspeConfig->weeklyXpCap, st.supplies, uint32(GuildProgressMgr::MaxGuildLevel()),
         guild->GetId(), Sanitize(guild->GetName(), 48)));
 }
 

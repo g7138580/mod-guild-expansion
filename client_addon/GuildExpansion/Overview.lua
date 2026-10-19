@@ -175,8 +175,13 @@ local function Refresh(page)
         end
         ui.today:SetText(today)
         local nextPerk = GE.NextPerk(st.level)
-        ui.nextPerk:SetText(nextPerk and string.format("Next perk at level %d: |cffffffff%s|r", nextPerk.lv, nextPerk.name)
-            or "All perks unlocked")
+        if nextPerk then
+            ui.nextPerk:SetText(string.format("Next perk at level %d: |cffffffff%s|r", nextPerk.lv, nextPerk.name))
+        elseif st.level < GE.MAX_LEVEL then
+            ui.nextPerk:SetText("All perks unlocked. Each new level gives a |cffffffffGuild Point|r.")
+        else
+            ui.nextPerk:SetText("All perks unlocked")
+        end
     end
 
     -- What's ready.

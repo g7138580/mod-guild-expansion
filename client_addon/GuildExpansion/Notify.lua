@@ -78,6 +78,12 @@ function Notify.LevelUp(oldLevel, newLevel, guildName, whileAway)
     local perkText = #names > 0
         and ("New perk" .. (#names > 1 and "s" or "") .. ": |cff88ff88" .. table.concat(names, ", ") .. "|r")
         or nil
+    -- Levels after 25 give a Guild Point each.
+    local points = newLevel - math.max(oldLevel, GE.PERK_LEVEL)
+    if points > 0 then
+        local pointText = string.format("|cff88ff88+%d Guild Point%s|r", points, points == 1 and "" or "s")
+        perkText = perkText and (perkText .. "  " .. pointText) or pointText
+    end
 
     GE.Print(string.format("Your guild reached level %d!", newLevel) .. (perkText and (" " .. perkText) or ""))
 
@@ -92,6 +98,9 @@ function Notify.LevelUp(oldLevel, newLevel, guildName, whileAway)
     splash.title:SetText(string.format("Guild Level %d!", newLevel))
     if #unlocked > 0 then
         splash.icon:SetTexture(GE.IconPath(unlocked[#unlocked]))
+        splash.sub:SetText(perkText)
+    elseif perkText then
+        splash.icon:SetTexture("Interface\\Icons\\INV_Shirt_GuildTabard_01")
         splash.sub:SetText(perkText)
     else
         splash.icon:SetTexture("Interface\\Icons\\INV_Shirt_GuildTabard_01")

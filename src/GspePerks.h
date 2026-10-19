@@ -10,6 +10,7 @@
 
 namespace GspePerks
 {
+// The last level with perks and slot unlocks; levels after it give Guild Points.
 constexpr uint8 MAX_GUILD_LEVEL = 25;
 
 enum Perk : uint8

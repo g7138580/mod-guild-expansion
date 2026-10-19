@@ -1,7 +1,7 @@
 --[[
   Guild Expansion: server sync.
   The server whispers LANG_ADDON lines to the player: "GSPE\t<command>\t<fields>".
-    STATE\tlevel\txp\tprev\tnext\ttoday\tweek\tdailyCap\tweeklyCap\tsupplies\tguildId\tname
+    STATE\tlevel\txp\tprev\tnext\ttoday\tweek\tdailyCap\tweeklyCap\tsupplies\tmaxLevel\tguildId\tname
     CLEAR | ERROR\ttext
     WOB\tcount\tstatus, WO\t..., WOE    work order list (status 0 ok, 1 no guild, 2 disabled)
     PLACED\torderId\ttotal | DONE\torderId\tgold\tguildXp\tsupplies
@@ -18,7 +18,8 @@ local PULL_THROTTLE = 2
 GuildExpansion = GuildExpansion or {}
 local GE = GuildExpansion
 
-GE.MAX_LEVEL = 25
+GE.MAX_LEVEL = 250      -- replaced by the server's maximum from STATE
+GE.PERK_LEVEL = 25      -- last level with perks; later levels give Guild Points
 GE.state = nil          -- guild progress, nil when not in a guild
 GE.orders = {}          -- work orders, in server order
 GE.ordersStatus = 0     -- 0 ok, 1 no guild, 2 disabled
@@ -152,10 +153,11 @@ function GE.FindOrder(id)
 end
 
 local function ParseState(fields)
-    local name = fields[13] or ""
-    for i = 14, #fields do
+    local name = fields[14] or ""
+    for i = 15, #fields do
         name = name .. " " .. fields[i]
     end
+    GE.MAX_LEVEL = tonumber(fields[12]) or GE.MAX_LEVEL
     return {
         level = tonumber(fields[3]) or 1,
         xp = tonumber(fields[4]) or 0,
@@ -166,7 +168,7 @@ local function ParseState(fields)
         dailyCap = tonumber(fields[9]) or 0,
         weeklyCap = tonumber(fields[10]) or 0,
         supplies = tonumber(fields[11]) or 0,
-        guildId = tonumber(fields[12]) or 0,
+        guildId = tonumber(fields[13]) or 0,
         guildName = name,
     }
 end

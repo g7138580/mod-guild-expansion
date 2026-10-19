@@ -32,15 +32,36 @@ bool GuildProgressMgr::IsHeadless(Player const* player)
 
 uint8 GuildProgressMgr::MaxGuildLevel()
 {
-    return GspePerks::MAX_GUILD_LEVEL;
+    return uint8(sGspeConfig->maxGuildLevel);
 }
 
 uint64 GuildProgressMgr::CumulativeXpForLevel(uint8 targetLevel)
 {
-    uint64 total = 0;
-    for (uint8 L = 1; L < targetLevel; ++L)
-        total += 4000ull * uint64(L) * uint64(L);
-    return uint64(double(total) * sGspeConfig->levelCurveMultiplier);
+    if (targetLevel <= 1)
+        return 0;
+
+    // Levels up to 25: 4000 x level^2 for each level, scaled by the curve multiplier.
+    uint64 const n = std::min<uint64>(targetLevel, GspePerks::MAX_GUILD_LEVEL) - 1;
+    uint64 const squares = n * (n + 1) * (2 * n + 1) / 6;
+    uint64 total = uint64(double(4000ull * squares) * sGspeConfig->levelCurveMultiplier);
+
+    // After 25 each level costs a fixed step more than the one before.
+    if (targetLevel > GspePerks::MAX_GUILD_LEVEL)
+    {
+        uint64 const m = targetLevel - GspePerks::MAX_GUILD_LEVEL;
+        total += m * sGspeConfig->levelCostAfter25 + uint64(sGspeConfig->levelCostStep) * m * (m + 1) / 2;
+    }
+    return total;
+}
+
+uint32 GuildProgressMgr::LevelUpSupplies(uint8 level)
+{
+    if (level <= GspePerks::MAX_GUILD_LEVEL)
+        return 0;
+    uint32 supplies = sGspeConfig->levelSuppliesBase + sGspeConfig->levelSuppliesStep * (level - GspePerks::MAX_GUILD_LEVEL);
+    if (level == MaxGuildLevel())
+        supplies += sGspeConfig->levelCapstoneSupplies;
+    return supplies;
 }
 
 uint8 GuildProgressMgr::LevelFromTotalXp(uint64 xp)
@@ -266,8 +287,22 @@ void GuildProgressMgr::OnLevelChanged(uint32 guildId, uint8 oldLevel, uint8 newL
         return;
 
     if (newLevel > oldLevel)
-        guild->BroadcastToGuild(nullptr, false,
-            Acore::StringFormat("Your guild has reached level {}!", uint32(newLevel)));
+    {
+        // Each level after 25 pays supplies (and a Guild Point, counted from the level).
+        uint32 supplies = 0;
+        for (uint32 level = uint32(oldLevel) + 1; level <= newLevel; ++level)
+            supplies += LevelUpSupplies(uint8(level));
+        if (supplies)
+            AddSupplies(guildId, supplies);
+
+        std::string text = Acore::StringFormat("Your guild has reached level {}!", uint32(newLevel));
+        if (newLevel > GspePerks::MAX_GUILD_LEVEL)
+        {
+            uint32 const points = uint32(newLevel) - std::max<uint32>(oldLevel, GspePerks::MAX_GUILD_LEVEL);
+            text += Acore::StringFormat(" +{} Guild Point{}, +{} guild supplies.", points, points == 1 ? "" : "s", supplies);
+        }
+        guild->BroadcastToGuild(nullptr, false, text);
+    }
 
     struct PerkRefresh
     {

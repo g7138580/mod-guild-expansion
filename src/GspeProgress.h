@@ -56,6 +56,8 @@ public:
     [[nodiscard]] static uint64 CumulativeXpForLevel(uint8 targetLevel);
     [[nodiscard]] static uint8 LevelFromTotalXp(uint64 xp);
     [[nodiscard]] static uint64 MaxStorableXp();
+    // Supplies paid for reaching a level after 25 (0 for levels up to 25).
+    [[nodiscard]] static uint32 LevelUpSupplies(uint8 level);
 
 private:
     GuildProgressMgr() = default;

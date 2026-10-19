@@ -26,6 +26,19 @@ GuildExpansion.IgnoreHeadlessPlayers = 1
 # curve (19.6M XP for level 25); 0.35 = about 6.9M.
 GuildExpansion.LevelCurveMultiplier = 0.35
 
+# Levels after 25 give a Guild Point and supplies instead of perks. Max is the highest
+# guild level (25 to 250). Level 26 costs CostAfter25 + CostStep XP, and each level after
+# that costs CostStep more than the one before (900k at 26, 2.75M at 100, 6.5M at 250).
+GuildExpansion.Levels.Max = 250
+GuildExpansion.Levels.CostAfter25 = 875000
+GuildExpansion.Levels.CostStep = 25000
+
+# Supplies for each level after 25: SuppliesBase + SuppliesStep x (level - 25), plus
+# CapstoneSupplies for reaching the highest level.
+GuildExpansion.Levels.SuppliesBase = 100
+GuildExpansion.Levels.SuppliesStep = 2
+GuildExpansion.Levels.CapstoneSupplies = 10000
+
 # Share of a character's kill / quest XP that is also given to the guild.
 GuildExpansion.Xp.KillPct = 0.08
 GuildExpansion.Xp.QuestPct = 0.06
