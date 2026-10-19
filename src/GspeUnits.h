@@ -189,7 +189,7 @@ private:
     UnitTemplate const* PickTemplate(int8 role) const;
     GuildUnit RollUnit(uint32 guildId, UnitTemplate const& tmpl, uint8 quality, uint8 level,
                        std::vector<GuildUnit> const& existing);
-    [[nodiscard]] uint8 RollQuality() const;
+    [[nodiscard]] uint8 RollQuality(uint32 guildId) const;
     [[nodiscard]] uint32 RecruitCost(uint8 quality) const;
     std::string PickName(uint8 race, uint8 gender, std::vector<GuildUnit> const& existing) const;
     void DeleteUnit(uint32 unitId);

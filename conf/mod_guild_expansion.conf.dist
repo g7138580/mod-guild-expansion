@@ -42,6 +42,9 @@ GuildExpansion.Levels.CapstoneSupplies = 10000
 # Guild supplies per spent Guild Point to reset all points.
 GuildExpansion.Levels.ResetCostPerPoint = 10
 
+# Guild supplies to change a milestone choice (levels 50 to 225); the first choice is free.
+GuildExpansion.Levels.MilestoneChangeCost = 500
+
 # Share of a character's kill / quest XP that is also given to the guild.
 GuildExpansion.Xp.KillPct = 0.08
 GuildExpansion.Xp.QuestPct = 0.06

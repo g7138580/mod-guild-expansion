@@ -61,6 +61,8 @@ enum QuartermasterWeeklySlot : uint8
     QM_WEEKLY_RECIPE_1  = 4,
     QM_WEEKLY_RECIPE_2  = 5,
     QM_WEEKLY_CURIOSITY = 6,
+    QM_WEEKLY_GEAR_3    = 7,   // milestone 125 A
+    QM_WEEKLY_CURIOSITY_2 = 8, // milestone 125 B
 };
 
 struct WeeklyOffer
@@ -148,7 +150,12 @@ private:
     void RollCharacterWeekly(Player* player, Weekly& weekly);
     [[nodiscard]] WeeklyOffer RollGear(Player* player, uint8 slot, uint32 exclude) const;
     void RollRecipes(uint32 guildId, Weekly& weekly) const;
-    [[nodiscard]] WeeklyOffer RollCuriosity(uint32 guildId) const;
+    [[nodiscard]] WeeklyOffer RollCuriosity(uint32 guildId, uint8 slot, uint32 exclude) const;
+    // Adds this week's milestone slots when the choice was made after the week was rolled.
+    void AddMilestoneSlots(Player* player, Weekly& characterWeekly, uint32 guildId, Weekly& guildWeekly);
+    // Whether a weekly slot is offered to this guild right now.
+    [[nodiscard]] static bool SlotActive(uint32 guildId, uint8 slot);
+    [[nodiscard]] static bool IsGearSlot(uint8 slot);
     void SaveGuildOffer(uint32 guildId, uint32 week, WeeklyOffer const& offer);
     void SaveGearOffer(Player* player, uint32 week, WeeklyOffer const& offer);
     [[nodiscard]] uint8 WeeklyState(Player* player, WeeklyOffer const& offer) const;

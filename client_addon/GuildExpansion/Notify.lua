@@ -84,6 +84,17 @@ function Notify.LevelUp(oldLevel, newLevel, guildName, whileAway)
         local pointText = string.format("|cff88ff88+%d Guild Point%s|r", points, points == 1 and "" or "s")
         perkText = perkText and (perkText .. "  " .. pointText) or pointText
     end
+    -- Milestones: a new rank, and (below 250) a bonus to choose.
+    for _, r in ipairs(GE.GUILD_RANKS) do
+        if r.lv > oldLevel and r.lv <= newLevel then
+            local rankText = "New rank: |cffffd200" .. r.name .. "|r"
+            if r.lv < 250 then
+                rankText = rankText .. ". Choose a milestone bonus on the Advancement tab."
+            end
+            GE.Print(rankText)
+            perkText = (perkText and (perkText .. "  ") or "") .. "|cffffd200" .. r.name .. "|r"
+        end
+    end
 
     GE.Print(string.format("Your guild reached level %d!", newLevel) .. (perkText and (" " .. perkText) or ""))
 

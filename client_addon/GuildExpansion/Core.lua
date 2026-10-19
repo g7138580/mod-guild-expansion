@@ -38,7 +38,26 @@ GE.contracts = {}       -- today's contracts, in slot order
 GE.contractInfo = { status = 0, resetsAt = 0, rerollsLeft = 0, bonusPaid = false, bonusSupplies = 0, done = 0 }
 GE.qmStock = {}         -- quartermaster rows shown to this character
 GE.qmInfo = { status = 0, guildLevel = 0, weeklyResetsAt = 0 }
-GE.advancement = { status = 0, level = 0, earned = 0, spent = 0, resetCost = 0, canEdit = false, trackMax = 25, tracks = {} }
+GE.advancement = { status = 0, level = 0, earned = 0, spent = 0, resetCost = 0, canEdit = false, trackMax = 25,
+                   changeCost = 0, tracks = {}, milestones = {} }
+
+-- Rank names for the milestones; keep the levels in sync with src/GspeAdvancement.h.
+GE.GUILD_RANKS = {
+    { lv = 50, name = "Renowned" }, { lv = 75, name = "Distinguished" }, { lv = 100, name = "Honored" },
+    { lv = 125, name = "Revered" }, { lv = 150, name = "Exalted" }, { lv = 175, name = "Illustrious" },
+    { lv = 200, name = "Heroic" }, { lv = 225, name = "Mythic" }, { lv = 250, name = "Legendary" },
+}
+
+-- The highest rank name the guild has reached, or nil below level 50.
+function GE.GuildRank(level)
+    local rank
+    for _, r in ipairs(GE.GUILD_RANKS) do
+        if level >= r.lv then
+            rank = r.name
+        end
+    end
+    return rank
+end
 GE.qmWeekly = {}        -- this week's offers, by slot (1-2 gear, 3 material, 4-5 recipes, 6 pet or mount)
 
 local DEFAULT_OPTIONS = {
@@ -71,6 +90,7 @@ local pendingMissions
 local pendingContracts
 local pendingStock
 local pendingTracks
+local pendingMilestones
 local pendingWeekly
 local hadSnapshotThisSession = false
 local lastPull = 0
@@ -572,7 +592,7 @@ local function OnLine(line)
     elseif cmd == "CBONUS" then
         GE.Notify.Toast("All of today's contracts complete!", "Sound\\Interface\\LevelUp.wav")
     elseif cmd == "AB" then
-        pendingTracks = {}
+        pendingTracks, pendingMilestones = {}, {}
         GE.advancement = {
             status = tonumber(fields[3]) or 0,
             level = tonumber(fields[4]) or 0,
@@ -581,17 +601,24 @@ local function OnLine(line)
             resetCost = tonumber(fields[7]) or 0,
             canEdit = fields[8] == "1",
             trackMax = tonumber(fields[9]) or 25,
+            changeCost = tonumber(fields[10]) or 0,
             tracks = GE.advancement.tracks,
+            milestones = GE.advancement.milestones,
         }
+    elseif cmd == "AM" then
+        if pendingMilestones then
+            pendingMilestones[tonumber(fields[3]) or 0] = tonumber(fields[4]) or 0
+        end
     elseif cmd == "AT" then
         if pendingTracks then
             pendingTracks[tonumber(fields[3]) or 0] = tonumber(fields[4]) or 0
         end
     elseif cmd == "AE" then
         GE.advancement.tracks = pendingTracks or {}
-        pendingTracks = nil
+        GE.advancement.milestones = pendingMilestones or {}
+        pendingTracks, pendingMilestones = nil, nil
         Fire("advancement")
-    elseif cmd == "ASPENT" then
+    elseif cmd == "ASPENT" or cmd == "ACHOSEN" then
         PlaySound("igMainMenuOptionCheckBoxOn")
     elseif cmd == "QB" then
         pendingStock, pendingWeekly = {}, {}

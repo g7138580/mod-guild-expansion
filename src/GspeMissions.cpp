@@ -336,7 +336,7 @@ bool MissionMgr::GenerateOffer(uint32 guildId, std::vector<GuildMission> const& 
     SetRewards(out, *tmpl);
 
     // Rare missions: double rewards and better gear.
-    if (roll_chance_i(int32(sGspeConfig->missionRareChance)))
+    if (roll_chance_i(int32(sAdvancementMgr->RareMissionChance(guildId))))
     {
         out.rare = true;
         out.gold *= 2;
@@ -651,7 +651,7 @@ void MissionMgr::SendBoard(Player* player)
 
     // MB\toffers\trunning\tslots\tstatus
     GspeAddonComm::Send(player, Acore::StringFormat("MB\t{}\t{}\t{}\t0",
-        offers, running, GspePerks::MissionSlots(sGuildProgressMgr->GetLevel(guildId))));
+        offers, running, sAdvancementMgr->MissionSlots(guildId)));
     for (GuildMission const& m : missions)
         SendMissionLine(player, m);
     GspeAddonComm::Send(player, "ME");
@@ -708,7 +708,7 @@ void MissionMgr::HandleStart(Player* player, uint32 missionId, std::vector<uint3
     std::vector<GuildMission> const& missions = GetMissions(guildId);
     uint32 const running = uint32(std::count_if(missions.begin(), missions.end(),
         [](GuildMission const& x) { return x.state == MISSION_STATE_RUNNING; }));
-    if (running >= GspePerks::MissionSlots(sGuildProgressMgr->GetLevel(guildId)))
+    if (running >= sAdvancementMgr->MissionSlots(guildId))
     {
         GspeAddonComm::SendError(player, "All of your guild's mission slots are in use.");
         return;
@@ -813,7 +813,13 @@ void MissionMgr::HandleCollect(Player* player, uint32 missionId)
         return std::any_of(champions.begin(), champions.end(), [kind](GuildUnit const* u) { return u->effectKind == kind; });
     };
     // Tailoring bags: +25% crafting materials.
-    auto materials = [&](uint32 count) { return hasEffect(UNIT_EFFECT_TAILORING) ? count + count / 4 : count; };
+    // Milestone 225 B: +25% gold and materials.
+    float const lootBonus = sAdvancementMgr->MissionLootMultiplier(guildId);
+    auto materials = [&](uint32 count)
+    {
+        uint32 const n = hasEffect(UNIT_EFFECT_TAILORING) ? count + count / 4 : count;
+        return uint32(float(n) * lootBonus);
+    };
 
     uint32 gold = 0, supplies = 0, guildXp = 0, item = 0, itemCount = 0, gear = 0;
     uint32 extraItem = 0, extraCount = 0, treasure = 0;
@@ -824,6 +830,7 @@ void MissionMgr::HandleCollect(Player* player, uint32 missionId)
         supplies = m.supplies;
         if (uint32 const sergeants = CountTrait(champions, TRAIT_SUPPLY_SERGEANT))
             supplies += std::max<uint32>(5 * sergeants, supplies * sergeants / 4);
+        supplies = uint32(float(supplies) * sAdvancementMgr->MissionSuppliesMultiplier(guildId));
         guildXp = m.guildXp;
         item = m.item;
         itemCount = materials(bonus ? m.itemCount * 2 : m.itemCount);
@@ -850,7 +857,7 @@ void MissionMgr::HandleCollect(Player* player, uint32 missionId)
                 treasure = RollGear(player, gearLevel, roll_chance_i(20) ? 3 : 2);
 
         // Salvage: gear, materials or gold.
-        if (roll_chance_i(int32(sGspeConfig->missionSalvageChance)))
+        if (roll_chance_i(int32(sAdvancementMgr->SalvageChance(guildId))))
         {
             uint32 const kind = urand(1, 100);
             if (kind <= 45)
@@ -864,7 +871,7 @@ void MissionMgr::HandleCollect(Player* player, uint32 missionId)
                 salvageGold = std::max<uint32>(m.gold / 2, uint32(m.level) * m.level * 5);
         }
 
-        float const goldBonus = sAdvancementMgr->GoldMultiplier(guildId);
+        float const goldBonus = sAdvancementMgr->GoldMultiplier(guildId) * lootBonus;
         gold = uint32(float(gold) * goldBonus);
         salvageGold = uint32(float(salvageGold) * goldBonus);
         if (uint32 const totalGold = gold + salvageGold)

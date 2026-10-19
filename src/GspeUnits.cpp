@@ -4,6 +4,7 @@
 
 #include "GspeUnits.h"
 #include "GspeAddonComm.h"
+#include "GspeAdvancement.h"
 #include "GspeConfig.h"
 #include "GspePerks.h"
 #include "GspeProgress.h"
@@ -329,12 +330,13 @@ UnitTemplate const* UnitMgr::PickTemplate(int8 role) const
     return nullptr;
 }
 
-uint8 UnitMgr::RollQuality() const
+uint8 UnitMgr::RollQuality(uint32 guildId) const
 {
     uint32 const roll = urand(1, 100);
-    if (roll <= sGspeConfig->recruitEpicChance)
+    uint32 const epic = sAdvancementMgr->RecruitEpicChance(guildId);
+    if (roll <= epic)
         return UNIT_QUALITY_EPIC;
-    if (roll <= sGspeConfig->recruitEpicChance + sGspeConfig->recruitRareChance)
+    if (roll <= epic + sAdvancementMgr->RecruitRareChance(guildId))
         return UNIT_QUALITY_RARE;
     return UNIT_QUALITY_UNCOMMON;
 }
@@ -442,13 +444,13 @@ void UnitMgr::RefreshCandidates(uint32 guildId, std::vector<GuildUnit>& units, b
     std::erase_if(units, [](GuildUnit const& u) { return u.status == UNIT_STATUS_CANDIDATE; });
 
     uint8 const cap = LevelCap(guildId);
-    for (uint32 i = 0; i < sGspeConfig->recruitCandidates; ++i)
+    for (uint32 i = 0; i < sAdvancementMgr->RecruitCandidates(guildId); ++i)
     {
         UnitTemplate const* tmpl = PickTemplate(-1);
         if (!tmpl)
             break;
 
-        uint8 const quality = RollQuality();
+        uint8 const quality = RollQuality(guildId);
         uint8 const level = uint8(std::max<int32>(1, int32(cap) - int32(urand(0, 2))));
         GuildUnit u = RollUnit(guildId, *tmpl, quality, level, units);
         u.status = UNIT_STATUS_CANDIDATE;
@@ -536,8 +538,8 @@ void UnitMgr::SendUnits(Player* player)
 
     // UB\tunits\tmaxUnits\tlevelCap\tcandidates\tcandidatesExpireIn\tstatus\ttroops\tmaxTroops\ttroopCost
     GspeAddonComm::Send(player, Acore::StringFormat("UB\t{}\t{}\t{}\t{}\t{}\t0\t{}\t{}\t{}",
-        unitCount, GspePerks::UnitSlots(guildLevel), uint32(LevelCap(guildId)),
-        candidateCount, candidatesExpireIn, troopCount, GspePerks::TroopSlots(guildLevel), sGspeConfig->troopCost));
+        unitCount, sAdvancementMgr->UnitSlots(guildId), uint32(LevelCap(guildId)),
+        candidateCount, candidatesExpireIn, troopCount, sAdvancementMgr->TroopSlots(guildId), sGspeConfig->troopCost));
     for (GuildUnit const& u : units)
         SendUnitLine(player, u);
     GspeAddonComm::Send(player, "UE");
@@ -560,7 +562,7 @@ void UnitMgr::HandleRecruit(Player* player, uint32 candidateId)
 
     std::size_t const unitCount = std::count_if(units.begin(), units.end(),
         [this](GuildUnit const& u) { return u.status != UNIT_STATUS_CANDIDATE && !IsTroop(u); });
-    if (unitCount >= GspePerks::UnitSlots(sGuildProgressMgr->GetLevel(guildId)))
+    if (unitCount >= sAdvancementMgr->UnitSlots(guildId))
     {
         GspeAddonComm::SendError(player, "Your guild has no room for another unit.");
         return;
@@ -613,7 +615,7 @@ void UnitMgr::HandleTrainTroop(Player* player, uint16 templateId)
     uint32 const guildId = player->GetGuildId();
     std::vector<GuildUnit>& units = GetUnits(guildId);
     std::size_t const troops = std::count_if(units.begin(), units.end(), [this](GuildUnit const& u) { return IsTroop(u); });
-    if (troops >= GspePerks::TroopSlots(sGuildProgressMgr->GetLevel(guildId)))
+    if (troops >= sAdvancementMgr->TroopSlots(guildId))
     {
         GspeAddonComm::SendError(player, "Your guild has no room for more troops.");
         return;
@@ -636,7 +638,7 @@ void UnitMgr::HandleTrainTroop(Player* player, uint16 templateId)
     u.level = level;
     u.itemLevel = ItemLevelForLevel(level);
     u.abilities[0] = tmpl->abilities.front();
-    u.vitality = TROOP_VITALITY;
+    u.vitality = sAdvancementMgr->TroopVitality(guildId);
     SaveUnit(u);
     units.push_back(std::move(u));
 

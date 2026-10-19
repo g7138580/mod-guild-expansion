@@ -27,6 +27,7 @@ void GspeConfig::Load()
     levelSuppliesStep = sConfigMgr->GetOption<uint32>("GuildExpansion.Levels.SuppliesStep", 2);
     levelCapstoneSupplies = sConfigMgr->GetOption<uint32>("GuildExpansion.Levels.CapstoneSupplies", 10000);
     advancementResetCostPerPoint = sConfigMgr->GetOption<uint32>("GuildExpansion.Levels.ResetCostPerPoint", 10);
+    milestoneChangeCost = sConfigMgr->GetOption<uint32>("GuildExpansion.Levels.MilestoneChangeCost", 500);
     xpKillPct = std::max(0.0f, sConfigMgr->GetOption<float>("GuildExpansion.Xp.KillPct", 0.08f));
     xpQuestPct = std::max(0.0f, sConfigMgr->GetOption<float>("GuildExpansion.Xp.QuestPct", 0.06f));
     xpKillFlat = sConfigMgr->GetOption<uint32>("GuildExpansion.Xp.KillFlat", 8);

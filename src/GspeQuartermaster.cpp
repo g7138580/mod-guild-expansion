@@ -233,10 +233,16 @@ void QuartermasterMgr::SendStock(Player* player)
             row.charLimit, boughtCount, uint32(RowState(player, row, guildLevel))));
     }
 
-    for (WeeklyOffer const& offer : CharacterWeekly(player).offers)
-        SendWeeklyLine(player, offer);
-    for (WeeklyOffer const& offer : GuildWeekly(player->GetGuildId()).offers)
-        SendWeeklyLine(player, offer);
+    uint32 const guildId = player->GetGuildId();
+    Weekly& gear = CharacterWeekly(player);
+    Weekly& shared = GuildWeekly(guildId);
+    AddMilestoneSlots(player, gear, guildId, shared);
+    for (WeeklyOffer const& offer : gear.offers)
+        if (SlotActive(guildId, offer.slot))
+            SendWeeklyLine(player, offer);
+    for (WeeklyOffer const& offer : shared.offers)
+        if (SlotActive(guildId, offer.slot))
+            SendWeeklyLine(player, offer);
     GspeAddonComm::Send(player, "QE");
 }
 
@@ -469,6 +475,50 @@ void QuartermasterMgr::RollCharacterWeekly(Player* player, Weekly& weekly)
     }
 }
 
+bool QuartermasterMgr::IsGearSlot(uint8 slot)
+{
+    return slot == QM_WEEKLY_GEAR_1 || slot == QM_WEEKLY_GEAR_2 || slot == QM_WEEKLY_GEAR_3;
+}
+
+bool QuartermasterMgr::SlotActive(uint32 guildId, uint8 slot)
+{
+    if (slot == QM_WEEKLY_GEAR_3)
+        return sAdvancementMgr->WeeklyExtraGear(guildId);
+    if (slot == QM_WEEKLY_CURIOSITY_2)
+        return sAdvancementMgr->WeeklyExtraCuriosity(guildId);
+    return true;
+}
+
+void QuartermasterMgr::AddMilestoneSlots(Player* player, Weekly& characterWeekly, uint32 guildId, Weekly& guildWeekly)
+{
+    auto has = [](Weekly const& w, uint8 slot)
+    {
+        return std::any_of(w.offers.begin(), w.offers.end(), [slot](WeeklyOffer const& o) { return o.slot == slot; });
+    };
+
+    if (sAdvancementMgr->WeeklyExtraGear(guildId) && !has(characterWeekly, QM_WEEKLY_GEAR_3))
+    {
+        // A third piece, different from the other two where possible.
+        uint32 exclude = 0;
+        for (WeeklyOffer const& o : characterWeekly.offers)
+            exclude = exclude ? exclude : o.item;
+        WeeklyOffer o = RollGear(player, QM_WEEKLY_GEAR_3, exclude);
+        characterWeekly.offers.push_back(o);
+        SaveGearOffer(player, characterWeekly.week, o);
+    }
+
+    if (sAdvancementMgr->WeeklyExtraCuriosity(guildId) && !has(guildWeekly, QM_WEEKLY_CURIOSITY_2))
+    {
+        uint32 exclude = 0;
+        for (WeeklyOffer const& o : guildWeekly.offers)
+            if (o.slot == QM_WEEKLY_CURIOSITY)
+                exclude = o.item;
+        WeeklyOffer o = RollCuriosity(guildId, QM_WEEKLY_CURIOSITY_2, exclude);
+        guildWeekly.offers.push_back(o);
+        SaveGuildOffer(guildId, guildWeekly.week, o);
+    }
+}
+
 WeeklyOffer QuartermasterMgr::RollGear(Player* player, uint8 slot, uint32 exclude) const
 {
     WeeklyOffer o;
@@ -537,7 +587,7 @@ void QuartermasterMgr::RollGuildWeekly(uint32 guildId, Weekly& weekly)
     weekly.offers.push_back(material);
 
     RollRecipes(guildId, weekly);
-    weekly.offers.push_back(RollCuriosity(guildId));
+    weekly.offers.push_back(RollCuriosity(guildId, QM_WEEKLY_CURIOSITY, 0));
 
     for (WeeklyOffer const& o : weekly.offers)
         SaveGuildOffer(guildId, weekly.week, o);
@@ -604,15 +654,15 @@ void QuartermasterMgr::RollRecipes(uint32 guildId, Weekly& weekly) const
     }
 }
 
-WeeklyOffer QuartermasterMgr::RollCuriosity(uint32 guildId) const
+WeeklyOffer QuartermasterMgr::RollCuriosity(uint32 guildId, uint8 slot, uint32 exclude) const
 {
     WeeklyOffer o;
-    o.slot = QM_WEEKLY_CURIOSITY;
+    o.slot = slot;
 
     uint8 const guildLevel = sGuildProgressMgr->GetLevel(guildId);
     std::vector<Curiosity const*> pets, mounts;
     for (Curiosity const& c : _curiosities)
-        if (guildLevel >= c.guildLevel)
+        if (guildLevel >= c.guildLevel && c.item != exclude)
             (c.kind == 2 ? mounts : pets).push_back(&c);
 
     bool const mount = !mounts.empty() && (pets.empty() || urand(1, 100) <= sGspeConfig->quartermasterCuriosityMountChance);
@@ -693,7 +743,7 @@ uint8 QuartermasterMgr::WeeklyState(Player* player, WeeklyOffer const& o) const
     ItemTemplate const* proto = sObjectMgr->GetItemTemplate(o.item);
     if (!proto)
         return QM_ROW_EMPTY;
-    if (o.slot >= QM_WEEKLY_RECIPE_1)
+    if (!IsGearSlot(o.slot) && o.slot != QM_WEEKLY_MATERIAL)
         for (uint32 spell : ItemSpells(proto))
             if (player->HasSpell(spell))
                 return QM_ROW_KNOWN;
@@ -721,7 +771,12 @@ void QuartermasterMgr::HandleBuyWeekly(Player* player, uint8 slot)
         return;
 
     uint32 const guildId = player->GetGuildId();
-    bool const gear = slot == QM_WEEKLY_GEAR_1 || slot == QM_WEEKLY_GEAR_2;
+    if (!SlotActive(guildId, slot))
+    {
+        SendStock(player);
+        return;
+    }
+    bool const gear = IsGearSlot(slot);
     Weekly& weekly = gear ? CharacterWeekly(player) : GuildWeekly(guildId);
     auto itr = std::find_if(weekly.offers.begin(), weekly.offers.end(), [slot](WeeklyOffer const& o) { return o.slot == slot; });
     if (itr == weekly.offers.end())

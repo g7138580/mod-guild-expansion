@@ -333,6 +333,8 @@ void Dispatch(Player* player, std::string_view request)
         sAdvancementMgr->HandleSpend(player, ArgAt<uint8>(args, 1), ArgAt<uint32>(args, 2));
     else if (cmd == "ARESET")
         sAdvancementMgr->HandleReset(player);
+    else if (cmd == "ACHOOSE")
+        sAdvancementMgr->HandleChoose(player, ArgAt<uint32>(args, 1), ArgAt<uint8>(args, 2));
     else if (cmd == "CONTRACTS")
         sContractMgr->SendContracts(player);
     else if (cmd == "CREROLL")

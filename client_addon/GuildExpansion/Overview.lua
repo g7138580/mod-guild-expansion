@@ -158,7 +158,9 @@ local function Refresh(page)
         ui.bar.text:SetText("")
     else
         ui.guildName:SetText(st.guildName ~= "" and st.guildName or "Your Guild")
-        ui.level:SetText(string.format("Guild Level |cffffffff%d|r of %d", st.level, GE.MAX_LEVEL))
+        local rank = GE.GuildRank(st.level)
+        ui.level:SetText(string.format("Guild Level |cffffffff%d|r of %d", st.level, GE.MAX_LEVEL)
+            .. (rank and ("  |cffffd200(" .. rank .. ")|r") or ""))
         if st.level >= GE.MAX_LEVEL then
             ui.bar:SetValue(1)
             ui.bar.text:SetText("Maximum guild level")

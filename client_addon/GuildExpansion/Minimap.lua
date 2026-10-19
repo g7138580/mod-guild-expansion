@@ -23,7 +23,9 @@ local function ShowTooltip(self)
     if not st then
         GameTooltip:AddLine("Not in a guild", 0.8, 0.8, 0.8)
     else
-        GameTooltip:AddLine(string.format("%s, level %d", st.guildName ~= "" and st.guildName or "Your guild", st.level), 1, 1, 1)
+        local rank = GE.GuildRank(st.level)
+        GameTooltip:AddLine(string.format("%s, level %d", st.guildName ~= "" and st.guildName or "Your guild", st.level)
+            .. (rank and (" (" .. rank .. ")") or ""), 1, 1, 1)
         local s = GE.Summary()
         GameTooltip:AddLine(" ")
         if s.contractsTotal > 0 then

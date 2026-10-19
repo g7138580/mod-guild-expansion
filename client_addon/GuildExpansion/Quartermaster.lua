@@ -15,8 +15,10 @@ local STRIP_HEIGHT = 142
 local ROW_WIDTH = 344
 local ROW_HEIGHT = 50
 local ROWS_PER_COLUMN = 7
-local WEEKLY_SLOTS = 6
+local WEEKLY_CARDS = 7      -- six, plus one from guild milestone 125
 local CARD_WIDTH = 144
+-- Slots in the order they are shown: gear first, then the shared offers.
+local WEEKLY_ORDER = { 1, 2, 7, 3, 4, 5, 6, 8 }
 local PAGE_SIZE = ROWS_PER_COLUMN * 2
 
 local CATEGORIES = {
@@ -50,7 +52,7 @@ local STATE_TEXT = {
 }
 
 -- Keep in sync with QuartermasterWeeklySlot.
-local WEEKLY_LABELS = { "Gear", "Gear", "Material", "Recipe", "Recipe", "Pet or Mount" }
+local WEEKLY_LABELS = { "Gear", "Gear", "Material", "Recipe", "Recipe", "Pet or Mount", "Gear", "Pet or Mount" }
 
 local selectedCategory = 1
 local pageIndex = 1
@@ -147,14 +149,14 @@ local function BuildWeekly(page)
     note:SetText("Gear is picked for you. Everything else is shared by the guild: one of each.")
 
     ui.weekly = {}
-    for i = 1, WEEKLY_SLOTS do
+    for i = 1, WEEKLY_CARDS do
         local card = UI.ParchmentRow(strip, CARD_WIDTH, 100)
         card:EnableMouse(false)
         card:SetPoint("TOPLEFT", 10 + (i - 1) * (CARD_WIDTH + 4), -32)
 
         card.label = card:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         card.label:SetPoint("TOPLEFT", 8, -7)
-        card.label:SetText(WEEKLY_LABELS[i])
+        card.label:SetText(WEEKLY_LABELS[i] or "")
 
         card.icon = UI.IconButton(card, 34)
         card.icon:SetPoint("TOPLEFT", 8, -22)
@@ -208,8 +210,29 @@ local function RefreshWeekly(page)
     local missing = false
     ui.weeklyReset:SetText("New stock in |cffffffff" .. UI.FormatDuration(GE.qmInfo.weeklyResetsAt - GetTime()) .. "|r")
 
+    -- Six cards normally, seven with a milestone slot; they share the strip's width.
+    local shown = {}
+    for _, slot in ipairs(WEEKLY_ORDER) do
+        if GE.qmWeekly[slot] then
+            shown[#shown + 1] = slot
+        end
+    end
+    local count = math.max(6, #shown)
+    local width = math.floor((UI.CONTENT_WIDTH - 20 - (count - 1) * 4) / count)
+
     for i, card in ipairs(ui.weekly) do
-        local offer = GE.qmWeekly[i]
+        local slot = shown[i] or WEEKLY_ORDER[i]
+        local offer = GE.qmWeekly[slot]
+        card:SetWidth(width)
+        card:ClearAllPoints()
+        card:SetPoint("TOPLEFT", 10 + (i - 1) * (width + 4), -32)
+        card.name:SetWidth(width - 58)
+        card.label:SetText(WEEKLY_LABELS[slot] or "")
+        if i > count then
+            card:Hide()
+        else
+            card:Show()
+        end
         card.offer = offer
         if offer and offer.item > 0 then
             local name, _, quality = GetItemInfo(offer.item)

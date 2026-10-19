@@ -218,7 +218,7 @@ void ContractMgr::Roll(Player* player, CharacterContracts& cc)
     cc.extraRerolls = 0;
     cc.bonusPaid = false;
 
-    for (uint8 slot = 0; slot < sGspeConfig->contractCount; ++slot)
+    for (uint8 slot = 0; slot < sAdvancementMgr->ContractCount(player->GetGuildId()); ++slot)
     {
         Contract c;
         if (!Generate(player, cc, c))
@@ -466,7 +466,8 @@ void ContractMgr::PayBonus(Player* player, CharacterContracts& cc)
 
     GspeConfig const* cfg = sGspeConfig;
     uint8 const level = uint8(player->GetLevel());
-    uint32 const supplies = uint32(cfg->contractBonusSuppliesBase + cfg->contractBonusSuppliesPerLevel * float(level));
+    uint32 const supplies = uint32((cfg->contractBonusSuppliesBase + cfg->contractBonusSuppliesPerLevel * float(level))
+        * sAdvancementMgr->ContractBonusMultiplier(player->GetGuildId()));
     if (uint32 const guildId = player->GetGuildId())
         sGuildProgressMgr->AddSupplies(guildId, supplies);
 
@@ -527,9 +528,10 @@ void ContractMgr::SendContracts(Player* player)
 
     GspeConfig const* cfg = sGspeConfig;
     uint32 const now = uint32(time(nullptr));
-    uint32 const rerollsLeft = cfg->contractFreeRerolls + cc->extraRerolls > cc->rerollsUsed
-        ? cfg->contractFreeRerolls + cc->extraRerolls - cc->rerollsUsed : 0;
-    uint32 const bonusSupplies = uint32(cfg->contractBonusSuppliesBase + cfg->contractBonusSuppliesPerLevel * float(player->GetLevel()));
+    uint32 const freeRerolls = sAdvancementMgr->ContractFreeRerolls(player->GetGuildId());
+    uint32 const rerollsLeft = freeRerolls + cc->extraRerolls > cc->rerollsUsed ? freeRerolls + cc->extraRerolls - cc->rerollsUsed : 0;
+    uint32 const bonusSupplies = uint32((cfg->contractBonusSuppliesBase + cfg->contractBonusSuppliesPerLevel * float(player->GetLevel()))
+        * sAdvancementMgr->ContractBonusMultiplier(player->GetGuildId()));
     uint32 const doneCount = uint32(std::count_if(cc->contracts.begin(), cc->contracts.end(), [](Contract const& c) { return c.done; }));
 
     // CB\tcount\tstatus\tresetsIn\trerollsLeft\tbonusPaid\tbonusSupplies\tdone
@@ -557,7 +559,7 @@ void ContractMgr::HandleReroll(Player* player, uint8 slot)
         return;
     }
 
-    if (cc->rerollsUsed >= sGspeConfig->contractFreeRerolls + cc->extraRerolls)
+    if (cc->rerollsUsed >= sAdvancementMgr->ContractFreeRerolls(player->GetGuildId()) + cc->extraRerolls)
     {
         GspeAddonComm::SendError(player, "No rerolls left today. The quartermaster sells more.");
         return;

@@ -26,6 +26,7 @@ struct GspeConfig
     uint32 levelSuppliesStep = 2;
     uint32 levelCapstoneSupplies = 10000; // extra supplies for reaching the maximum level
     uint32 advancementResetCostPerPoint = 10;
+    uint32 milestoneChangeCost = 500;
     float xpKillPct = 0.08f;
     float xpQuestPct = 0.06f;
     uint32 xpKillFlat = 8;

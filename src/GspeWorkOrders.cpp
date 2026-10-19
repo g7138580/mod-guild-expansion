@@ -262,7 +262,7 @@ void WorkOrderMgr::Refill(Player* player, CharacterOrders& co)
     for (uint32 id : expired)
         Remove(co, id);
 
-    while (co.orders.size() < sGspeConfig->workOrderCount)
+    while (co.orders.size() < sAdvancementMgr->WorkOrderCount(player->GetGuildId()))
     {
         WorkOrder order;
         if (!Generate(player, co, order))
@@ -492,7 +492,7 @@ void WorkOrderMgr::SendOrders(Player* player)
     Refill(player, *co);
 
     GspeAddonComm::Send(player, Acore::StringFormat("WOB\t{}\t0\t{}", co->orders.size(),
-        sGspeConfig->workOrderAbandonDelayHours));
+        sAdvancementMgr->AbandonDelayHours(player->GetGuildId())));
     for (WorkOrder const& o : co->orders)
         SendOrderLine(player, o, ValidatePlacements(player, o, co->placements[o.id]));
     GspeAddonComm::Send(player, "WOE");
@@ -676,7 +676,7 @@ void WorkOrderMgr::HandleAbandon(Player* player, uint32 orderId)
 
     // The slot stays empty until the delay passes; Refill then puts a new order in it.
     co->placements.erase(orderId);
-    uint32 const readyAt = uint32(time(nullptr)) + sGspeConfig->workOrderAbandonDelayHours * HOUR;
+    uint32 const readyAt = uint32(time(nullptr)) + sAdvancementMgr->AbandonDelayHours(player->GetGuildId()) * HOUR;
     *order = WorkOrder{ .id = orderId, .expires = readyAt };
     CharacterDatabase.Execute(
         "UPDATE mod_gspe_work_order SET kind = 0, skill = 0, spell = 0, item = 0, quantity = 0, gold = 0, supplies = 0, "
