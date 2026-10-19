@@ -4,6 +4,7 @@
 
 #include "GspeProgress.h"
 #include "GspeAddonComm.h"
+#include "GspeAdvancement.h"
 #include "GspeConfig.h"
 #include "GspePerks.h"
 
@@ -224,11 +225,14 @@ void GuildProgressMgr::AddGuildXP(uint32 guildId, uint32 amount, Player const* c
     PushAddonState(guildId, st.level != oldLevel);
 }
 
-void GuildProgressMgr::AddSupplies(uint32 guildId, uint32 amount)
+void GuildProgressMgr::AddSupplies(uint32 guildId, uint32 amount, bool earned)
 {
     GuildProgressState st{};
     if (!amount || !LoadProgress(guildId, st))
         return;
+
+    if (earned)
+        amount = uint32(float(amount) * sAdvancementMgr->SuppliesMultiplier(guildId));
 
     st.supplies += amount;
     SaveProgress(guildId, st);
@@ -293,7 +297,7 @@ void GuildProgressMgr::OnLevelChanged(uint32 guildId, uint8 oldLevel, uint8 newL
         for (uint32 level = uint32(oldLevel) + 1; level <= newLevel; ++level)
             supplies += LevelUpSupplies(uint8(level));
         if (supplies)
-            AddSupplies(guildId, supplies);
+            AddSupplies(guildId, supplies, false);
 
         std::string text = Acore::StringFormat("Your guild has reached level {}!", uint32(newLevel));
         if (newLevel > GspePerks::MAX_GUILD_LEVEL)

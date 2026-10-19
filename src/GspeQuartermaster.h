@@ -108,6 +108,8 @@ private:
     QuartermasterMgr() = default;
 
     [[nodiscard]] bool CheckRequest(Player* player);
+    // Cost after the Quartermaster's Favor track.
+    [[nodiscard]] static uint32 Price(Player* player, uint32 cost);
     [[nodiscard]] QuartermasterRow const* FindRow(uint16 id) const;
     [[nodiscard]] uint8 RowState(Player* player, QuartermasterRow const& row, uint8 guildLevel);
     [[nodiscard]] bool ServiceAvailable(Player* player, uint8 service) const;

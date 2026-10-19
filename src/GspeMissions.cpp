@@ -4,6 +4,7 @@
 
 #include "GspeMissions.h"
 #include "GspeAddonComm.h"
+#include "GspeAdvancement.h"
 #include "GspeConfig.h"
 #include "GspeItems.h"
 #include "GspePerks.h"
@@ -490,9 +491,10 @@ MissionMgr::Chance MissionMgr::ComputeChance(GuildMission const& m, std::vector<
         default: break;
     }
     chance += float(result.consumableBonus);
+    chance += float(sAdvancementMgr->MissionSuccessBonus(m.guildId));
 
     result.value = uint32(std::clamp(std::lround(chance), 0L, 200L));
-    float duration = float(m.duration);
+    float duration = float(m.duration) * sAdvancementMgr->MissionDurationMultiplier(m.guildId);
     if (hardy)
         duration *= 0.75f;
     if (alchemy)
@@ -862,6 +864,9 @@ void MissionMgr::HandleCollect(Player* player, uint32 missionId)
                 salvageGold = std::max<uint32>(m.gold / 2, uint32(m.level) * m.level * 5);
         }
 
+        float const goldBonus = sAdvancementMgr->GoldMultiplier(guildId);
+        gold = uint32(float(gold) * goldBonus);
+        salvageGold = uint32(float(salvageGold) * goldBonus);
         if (uint32 const totalGold = gold + salvageGold)
             player->ModifyMoney(int32(std::min<uint32>(totalGold, uint32(INT32_MAX))));
         if (supplies)
@@ -884,10 +889,10 @@ void MissionMgr::HandleCollect(Player* player, uint32 missionId)
         // Failure refunds half the supply cost.
         supplies = m.cost / 2;
         if (supplies)
-            sGuildProgressMgr->AddSupplies(guildId, supplies);
+            sGuildProgressMgr->AddSupplies(guildId, supplies, false);
     }
 
-    uint32 const unitXp = success ? m.unitXp : m.unitXp / 2;
+    uint32 const unitXp = uint32(float(success ? m.unitXp : m.unitXp / 2) * sAdvancementMgr->UnitXpMultiplier(guildId));
     uint8 const cap = sUnitMgr->LevelCap(guildId);
     uint32 levelUps = 0, promotions = 0;
     // Elixirs and food: units gain 25% more XP.

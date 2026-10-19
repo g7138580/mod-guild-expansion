@@ -3,6 +3,7 @@
  */
 
 #include "GspeAddonComm.h"
+#include "GspeAdvancement.h"
 #include "GspeConfig.h"
 #include "GspeContracts.h"
 #include "GspeMissions.h"
@@ -326,6 +327,12 @@ void Dispatch(Player* player, std::string_view request)
     }
     else if (cmd == "MCOLLECT")
         sMissionMgr->HandleCollect(player, ArgAt<uint32>(args, 1));
+    else if (cmd == "ADV")
+        sAdvancementMgr->SendAdvancement(player);
+    else if (cmd == "ASPEND")
+        sAdvancementMgr->HandleSpend(player, ArgAt<uint8>(args, 1), ArgAt<uint32>(args, 2));
+    else if (cmd == "ARESET")
+        sAdvancementMgr->HandleReset(player);
     else if (cmd == "CONTRACTS")
         sContractMgr->SendContracts(player);
     else if (cmd == "CREROLL")
@@ -395,6 +402,7 @@ public:
         sUnitMgr->OnGuildDisband(guild->GetId());
         sMissionMgr->OnGuildDisband(guild->GetId());
         sQuartermasterMgr->OnGuildDisband(guild->GetId());
+        sAdvancementMgr->OnGuildDisband(guild->GetId());
     }
 
     void OnAddMember(Guild* /*guild*/, Player* player, uint8& /*plRank*/) override
@@ -478,12 +486,14 @@ public:
         switch (xpSource)
         {
             case XPSOURCE_KILL:
-                amount = uint32(float(amount) * GspePerks::XpMultiplier(level));
+                amount = uint32(float(amount) * GspePerks::XpMultiplier(level)
+                    * sAdvancementMgr->CharacterXpMultiplier(player->GetGuildId()));
                 contrib = uint32(float(amount) * sGspeConfig->xpKillPct) + sGspeConfig->xpKillFlat;
                 break;
             case XPSOURCE_QUEST:
             case XPSOURCE_QUEST_DF:
-                amount = uint32(float(amount) * GspePerks::XpMultiplier(level));
+                amount = uint32(float(amount) * GspePerks::XpMultiplier(level)
+                    * sAdvancementMgr->CharacterXpMultiplier(player->GetGuildId()));
                 contrib = uint32(float(amount) * sGspeConfig->xpQuestPct);
                 break;
             case XPSOURCE_EXPLORE:
@@ -519,7 +529,8 @@ public:
         if (amount <= 0.f || !ShouldBoostReputation(repSource))
             return;
 
-        float const m = GspePerks::ReputationMultiplier(GuildLevelOf(player));
+        float const m = GspePerks::ReputationMultiplier(GuildLevelOf(player))
+            * (player->GetGuildId() ? sAdvancementMgr->ReputationMultiplier(player->GetGuildId()) : 1.0f);
         if (m > 1.0001f)
             amount *= m;
     }
@@ -658,10 +669,11 @@ public:
         if (sWorkingOvertimeGuard.erase(key))
             return;
 
-        if (!GspePerks::Has(GuildLevelOf(player), GspePerks::WORKING_OVERTIME))
-            return;
-
-        if (newValue >= max || urand(1, 100) > 10)
+        // Working Overtime: 10%; Steady Hands adds to it.
+        float chance = GspePerks::Has(GuildLevelOf(player), GspePerks::WORKING_OVERTIME) ? 10.0f : 0.0f;
+        if (player->GetGuildId())
+            chance += sAdvancementMgr->ExtraSkillUpChance(player->GetGuildId());
+        if (chance <= 0.0f || newValue >= max || !roll_chance_f(chance))
             return;
 
         sWorkingOvertimeGuard.insert(key);

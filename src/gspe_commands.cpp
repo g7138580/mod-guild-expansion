@@ -2,6 +2,7 @@
  * mod-guild-expansion: GM commands (.gspe).
  */
 
+#include "GspeAdvancement.h"
 #include "GspeConfig.h"
 #include "GspeContracts.h"
 #include "GspeMissions.h"
@@ -64,6 +65,7 @@ public:
             { "contracts", HandleContracts, SEC_ADMINISTRATOR, Console::No },
             { "contract", HandleContract, SEC_ADMINISTRATOR, Console::No },
             { "weekly",   HandleWeekly,   SEC_ADMINISTRATOR, Console::No },
+            { "resetpoints", HandleResetPoints, SEC_ADMINISTRATOR, Console::No },
             { "",         HandleInfo,     SEC_GAMEMASTER,    Console::No },
         };
 
@@ -197,6 +199,17 @@ public:
         if (!target || !number)
             return false;
         sContractMgr->FinishContract(target, number - 1);
+        return true;
+    }
+
+    // Refunds all of the guild's spent Guild Points without the supplies fee.
+    static bool HandleResetPoints(ChatHandler* handler)
+    {
+        uint32 const gid = RequireGuild(handler);
+        if (!gid)
+            return false;
+        sAdvancementMgr->ResetPoints(gid);
+        handler->SendSysMessage("GuildExpansion: Guild Points refunded.");
         return true;
     }
 

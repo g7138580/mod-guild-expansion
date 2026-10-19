@@ -4,6 +4,7 @@
 
 #include "GspeWorkOrders.h"
 #include "GspeAddonComm.h"
+#include "GspeAdvancement.h"
 #include "GspeConfig.h"
 #include "GspeProgress.h"
 
@@ -624,7 +625,8 @@ void WorkOrderMgr::HandleTurnIn(Player* player, uint32 orderId)
         return;
     }
 
-    WorkOrder const order = *found;
+    WorkOrder order = *found;
+    order.gold = uint32(float(order.gold) * sAdvancementMgr->GoldMultiplier(player->GetGuildId()));
     std::vector<Placement>& placed = co->placements[orderId];
     uint32 const total = ValidatePlacements(player, order, placed);
     if (total < order.quantity)

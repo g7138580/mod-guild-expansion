@@ -38,6 +38,7 @@ GE.contracts = {}       -- today's contracts, in slot order
 GE.contractInfo = { status = 0, resetsAt = 0, rerollsLeft = 0, bonusPaid = false, bonusSupplies = 0, done = 0 }
 GE.qmStock = {}         -- quartermaster rows shown to this character
 GE.qmInfo = { status = 0, guildLevel = 0, weeklyResetsAt = 0 }
+GE.advancement = { status = 0, level = 0, earned = 0, spent = 0, resetCost = 0, canEdit = false, trackMax = 25, tracks = {} }
 GE.qmWeekly = {}        -- this week's offers, by slot (1-2 gear, 3 material, 4-5 recipes, 6 pet or mount)
 
 local DEFAULT_OPTIONS = {
@@ -69,6 +70,7 @@ local pendingUnits
 local pendingMissions
 local pendingContracts
 local pendingStock
+local pendingTracks
 local pendingWeekly
 local hadSnapshotThisSession = false
 local lastPull = 0
@@ -569,6 +571,28 @@ local function OnLine(line)
         GE.Notify.Toast("Contract complete: |cffffffff" .. (fields[7] or "") .. "|r")
     elseif cmd == "CBONUS" then
         GE.Notify.Toast("All of today's contracts complete!", "Sound\\Interface\\LevelUp.wav")
+    elseif cmd == "AB" then
+        pendingTracks = {}
+        GE.advancement = {
+            status = tonumber(fields[3]) or 0,
+            level = tonumber(fields[4]) or 0,
+            earned = tonumber(fields[5]) or 0,
+            spent = tonumber(fields[6]) or 0,
+            resetCost = tonumber(fields[7]) or 0,
+            canEdit = fields[8] == "1",
+            trackMax = tonumber(fields[9]) or 25,
+            tracks = GE.advancement.tracks,
+        }
+    elseif cmd == "AT" then
+        if pendingTracks then
+            pendingTracks[tonumber(fields[3]) or 0] = tonumber(fields[4]) or 0
+        end
+    elseif cmd == "AE" then
+        GE.advancement.tracks = pendingTracks or {}
+        pendingTracks = nil
+        Fire("advancement")
+    elseif cmd == "ASPENT" then
+        PlaySound("igMainMenuOptionCheckBoxOn")
     elseif cmd == "QB" then
         pendingStock, pendingWeekly = {}, {}
         GE.qmInfo = {
@@ -656,6 +680,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         GE.Send("CONTRACTS")
         GE.RequestMissions()
         GE.Send("QM")
+        GE.Send("ADV")
     elseif event == "PLAYER_GUILD_UPDATE" then
         GE.RequestSync()
     elseif event == "CHAT_MSG_ADDON" then
@@ -675,6 +700,7 @@ local function PrintHelp()
     DEFAULT_CHAT_FRAME:AddMessage("  /gl contracts - open the Contracts tab")
     DEFAULT_CHAT_FRAME:AddMessage("  /gl qm - open the Quartermaster tab")
     DEFAULT_CHAT_FRAME:AddMessage("  /gl guild - open the Guild tab (level and perks)")
+    DEFAULT_CHAT_FRAME:AddMessage("  /gl points - open the Advancement tab (Guild Points)")
     DEFAULT_CHAT_FRAME:AddMessage("  /gl scale 0.9 - change the window size (0.6 to 1.4)")
     DEFAULT_CHAT_FRAME:AddMessage("  /gl bank - use Mobile Banking")
     DEFAULT_CHAT_FRAME:AddMessage("  /gl options - open the options")
@@ -699,6 +725,8 @@ SlashCmdList["GUILDEXPANSION"] = function(input)
         GE.UI.Show("contracts")
     elseif cmd == "qm" or cmd == "quartermaster" or cmd == "shop" then
         GE.UI.Show("quartermaster")
+    elseif cmd == "points" or cmd == "advancement" then
+        GE.UI.Show("advancement")
     elseif cmd == "guild" or cmd == "perks" then
         GE.UI.Show("guild")
     elseif cmd:match("^scale") then

@@ -38,6 +38,10 @@ local function ShowTooltip(self)
             GameTooltip:AddDoubleLine("New weekly stock in", GE.UI.FormatDuration(s.weeklyResetsAt - GetTime()), 1, 0.82, 0, 1, 1, 1)
         end
         GameTooltip:AddDoubleLine("Guild supplies", GE.FormatNumber(st.supplies), 1, 0.82, 0, 1, 1, 1)
+        local adv = GE.advancement
+        if adv.status == 0 and adv.earned > adv.spent then
+            GameTooltip:AddDoubleLine("Guild Points to spend", adv.earned - adv.spent, 1, 0.82, 0, 0.5, 1, 0.5)
+        end
     end
     GameTooltip:AddLine(" ")
     local key = GE.KeyText()

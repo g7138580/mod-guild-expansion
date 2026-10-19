@@ -38,7 +38,8 @@ public:
     // contributor may be null (GM commands). Gains from headless sessions (bots) are
     // ignored when GuildExpansion.IgnoreHeadlessPlayers is set.
     void AddGuildXP(uint32 guildId, uint32 amount, Player const* contributor);
-    void AddSupplies(uint32 guildId, uint32 amount);
+    // earned: supplies from play, raised by the Supply Lines track (not refunds or level-up payouts).
+    void AddSupplies(uint32 guildId, uint32 amount, bool earned = true);
     // Takes supplies if the guild has enough; returns false (and changes nothing) otherwise.
     [[nodiscard]] bool SpendSupplies(uint32 guildId, uint32 amount);
     void SetGuildXp(uint32 guildId, uint64 xp);

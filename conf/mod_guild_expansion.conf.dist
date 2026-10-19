@@ -39,6 +39,9 @@ GuildExpansion.Levels.SuppliesBase = 100
 GuildExpansion.Levels.SuppliesStep = 2
 GuildExpansion.Levels.CapstoneSupplies = 10000
 
+# Guild supplies per spent Guild Point to reset all points.
+GuildExpansion.Levels.ResetCostPerPoint = 10
+
 # Share of a character's kill / quest XP that is also given to the guild.
 GuildExpansion.Xp.KillPct = 0.08
 GuildExpansion.Xp.QuestPct = 0.06

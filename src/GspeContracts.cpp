@@ -4,6 +4,7 @@
 
 #include "GspeContracts.h"
 #include "GspeAddonComm.h"
+#include "GspeAdvancement.h"
 #include "GspeConfig.h"
 #include "GspeItems.h"
 #include "GspeMissions.h"
@@ -436,7 +437,8 @@ void ContractMgr::Complete(Player* player, CharacterContracts& cc, Contract& c)
     c.progress = c.needed;
     Save(player, c);
 
-    player->ModifyMoney(int32(std::min<uint32>(c.gold, uint32(INT32_MAX))));
+    uint32 const gold = uint32(float(c.gold) * sAdvancementMgr->GoldMultiplier(player->GetGuildId()));
+    player->ModifyMoney(int32(std::min<uint32>(gold, uint32(INT32_MAX))));
     if (uint32 const guildId = player->GetGuildId())
     {
         sGuildProgressMgr->AddSupplies(guildId, c.supplies);
@@ -446,9 +448,9 @@ void ContractMgr::Complete(Player* player, CharacterContracts& cc, Contract& c)
     std::string const title = Title(c);
     ChatHandler(player->GetSession()).SendSysMessage(Acore::StringFormat(
         "|cff00ccffContract complete:|r {} - {}g {}s {}c, {} guild XP, {} guild supplies.",
-        title, c.gold / 10000, (c.gold / 100) % 100, c.gold % 100, c.guildXp, c.supplies));
+        title, gold / 10000, (gold / 100) % 100, gold % 100, c.guildXp, c.supplies));
     GspeAddonComm::Send(player, Acore::StringFormat("CDONE\t{}\t{}\t{}\t{}\t{}",
-        uint32(c.slot), c.gold, c.supplies, c.guildXp, GspeAddonComm::Sanitize(title, 80)));
+        uint32(c.slot), gold, c.supplies, c.guildXp, GspeAddonComm::Sanitize(title, 80)));
 
     if (!cc.bonusPaid && !cc.contracts.empty()
         && std::all_of(cc.contracts.begin(), cc.contracts.end(), [](Contract const& x) { return x.done; }))

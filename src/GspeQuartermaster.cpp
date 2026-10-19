@@ -4,6 +4,7 @@
 
 #include "GspeQuartermaster.h"
 #include "GspeAddonComm.h"
+#include "GspeAdvancement.h"
 #include "GspeConfig.h"
 #include "GspeContracts.h"
 #include "GspeItems.h"
@@ -129,6 +130,14 @@ void QuartermasterMgr::OnLogout(Player* player)
     _characterWeekly.erase(player->GetGUID().GetCounter());
 }
 
+uint32 QuartermasterMgr::Price(Player* player, uint32 cost)
+{
+    if (!cost)
+        return 0;
+    float const price = float(cost) * sAdvancementMgr->QuartermasterPriceMultiplier(player->GetGuildId());
+    return std::max<uint32>(1, uint32(price + 0.5f));
+}
+
 bool QuartermasterMgr::CheckRequest(Player* player)
 {
     if (!sGspeConfig->enable || !sGspeConfig->quartermasterEnable)
@@ -220,7 +229,7 @@ void QuartermasterMgr::SendStock(Player* player)
         uint32 const boughtCount = itr != bought.end() ? itr->second : 0;
         // QT\tid\tcategory\titem\tcount\tservice\tcost\tguildLevel\tlimit\tbought\tstate
         GspeAddonComm::Send(player, Acore::StringFormat("QT\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-            row.id, uint32(row.category), row.item, row.count, uint32(row.service), row.cost, uint32(row.guildLevel),
+            row.id, uint32(row.category), row.item, row.count, uint32(row.service), Price(player, row.cost), uint32(row.guildLevel),
             row.charLimit, boughtCount, uint32(RowState(player, row, guildLevel))));
     }
 
@@ -264,7 +273,7 @@ void QuartermasterMgr::HandleBuy(Player* player, uint16 rowId)
             return;
     }
 
-    if (!sGuildProgressMgr->SpendSupplies(guildId, row->cost))
+    if (!sGuildProgressMgr->SpendSupplies(guildId, Price(player, row->cost)))
     {
         GspeAddonComm::SendError(player, "Your guild doesn't have enough supplies.");
         return;
@@ -702,7 +711,7 @@ void QuartermasterMgr::SendWeeklyLine(Player* player, WeeklyOffer const& o)
 
     // QW\tslot\titem\tcount\tcost\tstate\trandomProperty\tsuffixFactor\tbuyer
     GspeAddonComm::Send(player, Acore::StringFormat("QW\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-        uint32(o.slot), o.item, o.count, o.cost, uint32(WeeklyState(player, o)), o.randomProperty, suffixFactor,
+        uint32(o.slot), o.item, o.count, Price(player, o.cost), uint32(WeeklyState(player, o)), o.randomProperty, suffixFactor,
         GspeAddonComm::Sanitize(buyer, 24)));
 }
 
@@ -740,7 +749,7 @@ void QuartermasterMgr::HandleBuyWeekly(Player* player, uint8 slot)
             return;
     }
 
-    if (!sGuildProgressMgr->SpendSupplies(guildId, itr->cost))
+    if (!sGuildProgressMgr->SpendSupplies(guildId, Price(player, itr->cost)))
     {
         GspeAddonComm::SendError(player, "Your guild doesn't have enough supplies.");
         return;
