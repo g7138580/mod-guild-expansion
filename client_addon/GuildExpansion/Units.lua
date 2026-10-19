@@ -551,6 +551,10 @@ local function RefreshDetail(page)
         else
             ui.dEquip:Show()
             local armorName = ut and GE.ARMOR_NAMES[ut.armor] or "matching"
+            -- Plate and mail wearers wear one type lighter until level 40, like players.
+            if ut and ut.armor >= 3 and u.level < 40 then
+                armorName = GE.ARMOR_NAMES[ut.armor - 1] .. " or " .. string.lower(armorName)
+            end
             local roleWeapons = ut and ({ [0] = "a one-handed weapon or shield", [1] = "a staff, mace or wand", [2] = "any weapon" })[ut.role] or "a weapon"
             local gear = {
                 { item = u.weaponItem, ilvl = u.weaponIlvl, empty = "Weapon: drag " .. roleWeapons .. " here." },

@@ -703,6 +703,16 @@ char const* ArmorName(uint8 armor)
         default:                          return "no";
     }
 }
+
+// Like players, plate wearers wear mail and mail wearers leather until level 40.
+constexpr uint8 HEAVY_ARMOR_LEVEL = 40;
+
+bool ArmorFits(uint8 armor, uint8 unitLevel, uint32 subclass)
+{
+    if (subclass == armor)
+        return true;
+    return unitLevel < HEAVY_ARMOR_LEVEL && armor >= ITEM_SUBCLASS_ARMOR_MAIL && subclass == uint32(armor - 1);
+}
 } // namespace
 
 uint8 UnitMgr::EffectKindFor(ItemTemplate const* p) const
@@ -780,10 +790,14 @@ void UnitMgr::HandleEquip(Player* player, uint32 unitId, uint8 gearSlot, uint8 c
                     : tmpl->role == UNIT_ROLE_HEALER ? "Healers use staves, maces or wands." : "That isn't a weapon.");
                 return;
             }
-            if (!weapon && (proto->Class != ITEM_CLASS_ARMOR || proto->SubClass != tmpl->armor || !IsBodyArmorSlot(proto->InventoryType)))
+            if (!weapon && (proto->Class != ITEM_CLASS_ARMOR || !ArmorFits(tmpl->armor, unit->level, proto->SubClass)
+                || !IsBodyArmorSlot(proto->InventoryType)))
             {
+                std::string const types = unit->level < HEAVY_ARMOR_LEVEL && tmpl->armor >= ITEM_SUBCLASS_ARMOR_MAIL
+                    ? Acore::StringFormat("{} or {}", ArmorName(tmpl->armor - 1), ArmorName(tmpl->armor))
+                    : std::string(ArmorName(tmpl->armor));
                 GspeAddonComm::SendError(player, Acore::StringFormat("{} wears {} armor (head, shoulders, chest, wrists, hands, waist, legs or feet).",
-                    unit->name, ArmorName(tmpl->armor)));
+                    unit->name, types));
                 return;
             }
 
